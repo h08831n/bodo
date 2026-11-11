@@ -7,7 +7,12 @@ setlocal enabledelayedexpansion
 
 title bodo ERP - Dev Launcher
 
-call "%~dp0common.bat"
+:: Navigate to project root reliably
+set "SCRIPT_DIR=%~dp0"
+cd /d "%SCRIPT_DIR%..\.."
+set "PROJECT_ROOT=%CD%"
+
+call "%SCRIPT_DIR%common.bat"
 if %errorlevel% neq 0 (
     echo [ERROR] Pre-flight checks failed.
     echo.
@@ -93,8 +98,17 @@ goto wait_dev_db_loop
 :dev_containers_ready
 echo.
 echo [INFO] Launching pnpm dev in a dedicated window ("bodo-dev-server")...
-echo active > "%PROJECT_ROOT%\.dev-server.active"
-start "bodo-dev-server" cmd /k "cd /d ""%PROJECT_ROOT%"" && pnpm dev"
+
+if exist "%SCRIPT_DIR%launch-dev.ps1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%launch-dev.ps1" -ProjectRoot "%PROJECT_ROOT%"
+) else (
+    start "bodo-dev-server" cmd /k "title bodo-dev-server && cd /d ""%PROJECT_ROOT%"" && pnpm dev"
+)
+
+if exist "%PROJECT_ROOT%\.dev-pid" (
+    set /p DEV_PID=<"%PROJECT_ROOT%\.dev-pid"
+    echo [INFO] Recorded dev server window PID: !DEV_PID!
+)
 
 echo [INFO] Waiting for dev server to initialize (6s)...
 ping 127.0.0.1 -n 7 >nul

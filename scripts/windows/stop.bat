@@ -7,7 +7,12 @@ setlocal enabledelayedexpansion
 
 title bodo ERP - Stop Services
 
-call "%~dp0common.bat"
+:: Navigate to project root reliably
+set "SCRIPT_DIR=%~dp0"
+cd /d "%SCRIPT_DIR%..\.."
+set "PROJECT_ROOT=%CD%"
+
+call "%SCRIPT_DIR%common.bat"
 if %errorlevel% neq 0 (
     echo [ERROR] Pre-flight checks failed.
     echo.

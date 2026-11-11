@@ -7,7 +7,12 @@ setlocal enabledelayedexpansion
 
 title bodo ERP - Live Logs
 
-call "%~dp0common.bat"
+:: Navigate to project root reliably
+set "SCRIPT_DIR=%~dp0"
+cd /d "%SCRIPT_DIR%..\.."
+set "PROJECT_ROOT=%CD%"
+
+call "%SCRIPT_DIR%common.bat"
 if %errorlevel% neq 0 (
     echo [ERROR] Pre-flight checks failed.
     echo.
@@ -25,13 +30,13 @@ echo.
 
 :: Check whether production or dev containers are running
 docker ps --format "{{.Names}}" | findstr "bodo-api" >nul 2>&1
-if %errorlevel% equ 0 (
+if !errorlevel! equ 0 (
     echo [INFO] Following production stack logs...
     echo.
     docker compose --env-file "%PROJECT_ROOT%\.env" -f "%PROJECT_ROOT%\infra\docker-compose.yml" logs -f --tail 100
 ) else (
     docker ps --format "{{.Names}}" | findstr "bodo-postgres-dev" >nul 2>&1
-    if %errorlevel% equ 0 (
+    if !errorlevel! equ 0 (
         echo [INFO] Following dev database containers logs...
         echo.
         docker compose --env-file "%PROJECT_ROOT%\.env" -f "%PROJECT_ROOT%\infra\docker-compose.dev.yml" logs -f --tail 100

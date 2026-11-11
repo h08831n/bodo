@@ -7,7 +7,12 @@ setlocal enabledelayedexpansion
 
 title bodo ERP - Production Launcher
 
-call "%~dp0common.bat"
+:: Navigate to project root reliably
+set "SCRIPT_DIR=%~dp0"
+cd /d "%SCRIPT_DIR%..\.."
+set "PROJECT_ROOT=%CD%"
+
+call "%SCRIPT_DIR%common.bat"
 if %errorlevel% neq 0 (
     echo [ERROR] Pre-flight checks failed.
     echo.
@@ -39,13 +44,13 @@ set /a health_sec=0
 :health_loop
 ping 127.0.0.1 -n 3 >nul
 curl -s -f http://localhost/health/live >nul 2>&1
-if %errorlevel% equ 0 (
+if !errorlevel! equ 0 (
     echo [INFO] API and Web services are healthy!
     goto ready_success
 )
 
 set /a health_sec+=2
-if %health_sec% geq 60 (
+if !health_sec! geq 60 (
     echo [WARNING] Services did not report healthy within 60s, but containers may still be initializing.
     goto ready_success
 )
