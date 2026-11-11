@@ -41,7 +41,7 @@ jobs:
         run: cp .env.example .env
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
+        run: pnpm install --frozen-lockfile
 
       - name: Lint
         run: pnpm lint
@@ -49,11 +49,11 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Test
-        run: pnpm test
-
       - name: Build
         run: pnpm build
+
+      - name: Test (Unit tests & Check no external URLs)
+        run: pnpm test
 
   docker-verify:
     name: Verify Docker Builds
@@ -78,7 +78,7 @@ jobs:
 
       - name: Install dependencies & Build
         run: |
-          pnpm install --frozen-lockfile=false
+          pnpm install --frozen-lockfile
           pnpm build
 
       - name: Build API Docker Image

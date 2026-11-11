@@ -13,6 +13,7 @@ export const EnvSchema = z.object({
     .default('3000'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
+  REDIS_PASSWORD: z.string().optional().default(''),
   CORS_ORIGINS: z.string().default('http://localhost:5173,http://localhost:3000'),
   MASTER_PASSWORD_INITIAL: z.string().min(8, 'MASTER_PASSWORD_INITIAL must be at least 8 chars'),
   DB_MANAGER_ENABLED: z

@@ -47,13 +47,16 @@ export function App() {
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-sm">
           <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-semibold mb-3">
             <CheckCircle2 className="w-5 h-5" />
-            <span>اسکلت پروژه با موفقیت راه‌اندازی شد (گام S1.1)</span>
+            <span>
+              اسکلت پروژه با موفقیت راه‌اندازی شد (<bdi dir="ltr">گام S1.1</bdi>)
+            </span>
           </div>
           <h2 className="text-2xl font-bold mb-4">به سامانه bodo خوش آمدید</h2>
           <p className="text-slate-600 dark:text-slate-300 leading-relaxed mb-6">
-            این برنامه با معماری کاملاً ایزوله «هر شرکت یک دیتابیس مستقل» (Multi-Tenancy بدون
-            company_id و بدون RLS)، رابط کاربری کاملاً راست‌چین (RTL)، پشتیبانی آفلاین PWA و فونت
-            خودمیزبان وزیرمتن طراحی شده است.
+            این برنامه با معماری کاملاً ایزوله «هر شرکت یک دیتابیس مستقل» (
+            <bdi dir="ltr">Multi-Tenancy</bdi> بدون <bdi dir="ltr">company_id</bdi> و بدون{' '}
+            <bdi dir="ltr">RLS</bdi>)، رابط کاربری کاملاً راست‌چین (<bdi dir="ltr">RTL</bdi>)،
+            پشتیبانی آفلاین <bdi dir="ltr">PWA</bdi> و فونت خودمیزبان وزیرمتن طراحی شده است.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
@@ -81,14 +84,16 @@ export function App() {
           </div>
 
           <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4">
-            <span className="text-sm text-slate-500">کامپوننت نمونه از packages/ui:</span>
+            <span className="text-sm text-slate-500">
+              کامپوننت نمونه از <bdi dir="ltr">packages/ui</bdi>:
+            </span>
             <SamplePlaceholder label="تست کامپوننت مشترک UI" />
           </div>
         </div>
       </main>
 
       <footer className="mt-8 border-t border-slate-200 dark:border-slate-800 pt-4 text-center text-xs text-slate-500 dark:text-slate-400">
-        نسخه ۰.۱.۰ (گام S1.1 اسکلت، ابزارها و زیرساخت کانتینر)
+        نسخه ۰.۱.۰ (<bdi dir="ltr">گام S1.1</bdi> اسکلت، ابزارها و زیرساخت کانتینر)
       </footer>
     </div>
   );

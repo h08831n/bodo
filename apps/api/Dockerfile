@@ -1,6 +1,7 @@
 # Stage 1: Base & Dependencies
 FROM node:24-bookworm-slim AS base
 WORKDIR /app
+# NODE_OPTIONS is strictly limited to build stages to resolve IPv4 precedence during dependency download
 ENV NODE_OPTIONS="--dns-result-order=ipv4first"
 
 RUN corepack enable && corepack prepare pnpm@12.18.0 --activate
@@ -9,12 +10,15 @@ RUN corepack enable && corepack prepare pnpm@12.18.0 --activate
 FROM base AS builder
 WORKDIR /app
 
+# Copy all workspace manifests so pnpm lockfile matches 100% with --frozen-lockfile
 COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml turbo.json tsconfig.base.json ./
 COPY packages/contracts/package.json ./packages/contracts/
 COPY packages/utils/package.json ./packages/utils/
+COPY packages/ui/package.json ./packages/ui/
+COPY apps/web/package.json ./apps/web/
 COPY apps/api/package.json ./apps/api/
 
-RUN pnpm install --frozen-lockfile=false
+RUN pnpm install --frozen-lockfile
 
 COPY packages/contracts ./packages/contracts
 COPY packages/utils ./packages/utils
@@ -24,7 +28,7 @@ RUN pnpm --filter @bodo/contracts build
 RUN pnpm --filter @bodo/utils build
 RUN pnpm --filter @bodo/api build
 
-# Stage 3: Runner
+# Stage 3: Runner (Clean runtime image, NODE_OPTIONS is NOT set here)
 FROM node:24-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
