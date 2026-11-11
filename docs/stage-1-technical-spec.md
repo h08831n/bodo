@@ -9,23 +9,23 @@
 
 ## ۰. تصمیم‌های قفل‌شده
 
-| موضوع | تصمیم |
-|---|---|
-| بک‌اند | NestJS + TypeScript (strict) |
-| فرانت‌اند | React + Vite + TypeScript، Tailwind + Radix، TanStack Query/Table، React Hook Form؛ **PWA-ready** |
-| دیتابیس | PostgreSQL ۱۶+ |
-| ORM | Prisma؛ کوئری‌های سنگین با `$queryRaw`/TypedSQL |
-| مایگریشن | SQL دستی‌ریویوشده |
-| شناسه‌ها | UUIDv7 (تولید در اپلیکیشن) |
-| زبان | فقط فارسی، RTL، تقویم شمسی در لایه‌ی نمایش |
-| تاریخ | در دیتابیس و API همیشه UTC/ISO-8601 |
+| موضوع        | تصمیم                                                                                                                                       |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| بک‌اند       | NestJS + TypeScript (strict)                                                                                                                |
+| فرانت‌اند    | React + Vite + TypeScript، Tailwind + Radix، TanStack Query/Table، React Hook Form؛ **PWA-ready**                                           |
+| دیتابیس      | PostgreSQL ۱۶+                                                                                                                              |
+| ORM          | Prisma؛ کوئری‌های سنگین با `$queryRaw`/TypedSQL                                                                                             |
+| مایگریشن     | SQL دستی‌ریویوشده                                                                                                                           |
+| شناسه‌ها     | UUIDv7 (تولید در اپلیکیشن)                                                                                                                  |
+| زبان         | فقط فارسی، RTL، تقویم شمسی در لایه‌ی نمایش                                                                                                  |
+| تاریخ        | در دیتابیس و API همیشه UTC/ISO-8601                                                                                                         |
 | **چندشرکتی** | **هر شرکت = یک دیتابیس کاملاً مستقل** (کاربران، رمزها، تنظیمات، فایل‌ها، همه جدا). هیچ دیتابیس مرکزی با داده‌ی کسب‌وکار یا کاربر وجود ندارد |
-| ارز | هر سند ارز خودش را دارد؛ **هیچ تبدیل و معادل‌سازی ارزی وجود ندارد** |
-| احراز هویت | نام کاربری + رمز عبور، استراتژی‌محور (OTP بعداً) |
-| اطلاعات شرکت | **هنگام ساخت دیتابیس وارد نمی‌شود**؛ در تنظیمات (بخش «شرکت») ویرایش می‌شود |
-| پورتال مشتری | فقط نوع کاربر و گارد؛ صفحات در مرحله‌ی ۶ |
-| پیامک | `SmsProvider` انتزاعی؛ اولین adapter: ملی‌پیامک (مرحله‌ی ۲) |
-| استقرار | سرور شخصی، Docker Compose |
+| ارز          | هر سند ارز خودش را دارد؛ **هیچ تبدیل و معادل‌سازی ارزی وجود ندارد**                                                                         |
+| احراز هویت   | نام کاربری + رمز عبور، استراتژی‌محور (OTP بعداً)                                                                                            |
+| اطلاعات شرکت | **هنگام ساخت دیتابیس وارد نمی‌شود**؛ در تنظیمات (بخش «شرکت») ویرایش می‌شود                                                                  |
+| پورتال مشتری | فقط نوع کاربر و گارد؛ صفحات در مرحله‌ی ۶                                                                                                    |
+| پیامک        | `SmsProvider` انتزاعی؛ اولین adapter: ملی‌پیامک (مرحله‌ی ۲)                                                                                 |
+| استقرار      | سرور شخصی، Docker Compose                                                                                                                   |
 
 ---
 
@@ -92,13 +92,13 @@ erp/
 
 هیچ دیتابیس مرکزی نداریم. فقط این‌ها بیرون از دیتابیس‌های شرکت‌ها وجود دارند:
 
-| مورد | محل | توضیح |
-|---|---|---|
-| **رمز مدیر اصلی (Master Password)** | `/data/config/master.json` (هش argon2id) | فقط برای Database Manager. در اولین اجرا از `MASTER_PASSWORD_INITIAL` در env ساخته می‌شود و از UI قابل تغییر است |
-| **نگاشت دامنه به دیتابیس** (اختیاری) | `/data/config/domains.json` | مثلاً `acme.erp.local → erp_acme` |
-| **فهرست دیتابیس‌ها** | خود PostgreSQL | همه‌ی دیتابیس‌های با پیشوند `erp_` که جدول `company_profile` دارند |
-| **فایل‌ها (پیوست‌ها)** | `/data/filestore/<db>/` | هر دیتابیس پوشه‌ی جدا |
-| **بکاپ‌ها** | `/data/backups/<db>/` | |
+| مورد                                 | محل                                      | توضیح                                                                                                            |
+| ------------------------------------ | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **رمز مدیر اصلی (Master Password)**  | `/data/config/master.json` (هش argon2id) | فقط برای Database Manager. در اولین اجرا از `MASTER_PASSWORD_INITIAL` در env ساخته می‌شود و از UI قابل تغییر است |
+| **نگاشت دامنه به دیتابیس** (اختیاری) | `/data/config/domains.json`              | مثلاً `acme.erp.local → erp_acme`                                                                                |
+| **فهرست دیتابیس‌ها**                 | خود PostgreSQL                           | همه‌ی دیتابیس‌های با پیشوند `erp_` که جدول `company_profile` دارند                                               |
+| **فایل‌ها (پیوست‌ها)**               | `/data/filestore/<db>/`                  | هر دیتابیس پوشه‌ی جدا                                                                                            |
+| **بکاپ‌ها**                          | `/data/backups/<db>/`                    |                                                                                                                  |
 
 ### ۲.۲ TenantContext
 
@@ -121,6 +121,7 @@ erp/
 ورودی: slug، نام کاربری مدیر، نام کامل مدیر، رمز مدیر. **هیچ اطلاعات شرکت لازم نیست.**
 
 مراحل (job با گزارش پیشرفت):
+
 1. اعتبارسنجی نام و یکتایی
 2. `CREATE DATABASE erp_tmp_<id>` (با نقش `erp_provisioner`)
 3. اجرای همه‌ی مایگریشن‌ها (`prisma migrate deploy` با `DATABASE_URL` همان دیتابیس)
@@ -133,24 +134,24 @@ erp/
 
 ### ۲.۵ کپی، بکاپ، بازیابی، حذف
 
-| عملیات | جزئیات |
-|---|---|
-| **کپی** | `pg_dump -Fc` از مبدأ + `pg_restore` روی دیتابیس جدید + کپی filestore. (`CREATE DATABASE ... TEMPLATE` استفاده نمی‌شود چون اتصال‌های مبدأ را قطع می‌خواهد.) گزینه‌ی `neutralize` (بند پایین) |
-| **بکاپ** | فایل `zip` شامل `dump.pgdump` (فرمت custom)، پوشه‌ی `filestore/` و `manifest.json` (`db_name`، `schema_version` = نام آخرین مایگریشن، `app_version`، `created_at`، `checksum`) |
-| **بازیابی** | از فایل zip با نام جدید. اگر مایگریشن‌های بکاپ قدیمی‌تر از برنامه بود، مایگریشن‌های باقی‌مانده خودکار اجرا می‌شود؛ اگر جدیدتر بود (برنامه آن را نمی‌شناسد) با خطای واضح رد می‌شود. اگر دیتابیس هم‌نام وجود دارد رد می‌شود (بازنویسی فقط با حذف صریح قبلی) |
-| **حذف** | تایید با تایپ‌کردن نام کامل دیتابیس؛ قبلش یک بکاپ خودکار گرفته می‌شود؛ بعد MAINTENANCE، بستن کلاینت و اتصال‌ها (`pg_terminate_backend`)، `DROP DATABASE`، حذف filestore |
-| **ارتقا (Upgrade)** | اجرای مایگریشن‌های جدید روی یک دیتابیس (یا همه) |
-| **Neutralize** | هنگام کپی یا بازیابی اختیاری: ارسال پیامک/ایمیل/پوش و زمان‌بند یادآورها در آن دیتابیس خاموش می‌شود (`system_settings.neutralized = true`) تا از روی نسخه‌ی آزمایشی پیام واقعی به مشتری‌ها نرود |
+| عملیات              | جزئیات                                                                                                                                                                                                                                                    |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **کپی**             | `pg_dump -Fc` از مبدأ + `pg_restore` روی دیتابیس جدید + کپی filestore. (`CREATE DATABASE ... TEMPLATE` استفاده نمی‌شود چون اتصال‌های مبدأ را قطع می‌خواهد.) گزینه‌ی `neutralize` (بند پایین)                                                              |
+| **بکاپ**            | فایل `zip` شامل `dump.pgdump` (فرمت custom)، پوشه‌ی `filestore/` و `manifest.json` (`db_name`، `schema_version` = نام آخرین مایگریشن، `app_version`، `created_at`، `checksum`)                                                                            |
+| **بازیابی**         | از فایل zip با نام جدید. اگر مایگریشن‌های بکاپ قدیمی‌تر از برنامه بود، مایگریشن‌های باقی‌مانده خودکار اجرا می‌شود؛ اگر جدیدتر بود (برنامه آن را نمی‌شناسد) با خطای واضح رد می‌شود. اگر دیتابیس هم‌نام وجود دارد رد می‌شود (بازنویسی فقط با حذف صریح قبلی) |
+| **حذف**             | تایید با تایپ‌کردن نام کامل دیتابیس؛ قبلش یک بکاپ خودکار گرفته می‌شود؛ بعد MAINTENANCE، بستن کلاینت و اتصال‌ها (`pg_terminate_backend`)، `DROP DATABASE`، حذف filestore                                                                                   |
+| **ارتقا (Upgrade)** | اجرای مایگریشن‌های جدید روی یک دیتابیس (یا همه)                                                                                                                                                                                                           |
+| **Neutralize**      | هنگام کپی یا بازیابی اختیاری: ارسال پیامک/ایمیل/پوش و زمان‌بند یادآورها در آن دیتابیس خاموش می‌شود (`system_settings.neutralized = true`) تا از روی نسخه‌ی آزمایشی پیام واقعی به مشتری‌ها نرود                                                            |
 
 **بکاپ خودکار:** Job شبانه برای همه‌ی دیتابیس‌ها، هرکدام فایل جدا؛ نگهداری قابل‌تنظیم از env (پیش‌فرض: ۷ روزانه، ۴ هفتگی، ۶ ماهانه)؛ هشدار در لاگ اگر بکاپی انجام نشد.
 
 ### ۲.۶ نقش‌های دیتابیس
 
-| نقش | دسترسی |
-|---|---|
-| `erp_provisioner` | `CREATEDB` (ساخت، حذف و تغییر نام دیتابیس‌ها) |
-| `erp_migrator` | owner جدول‌ها؛ فقط برای مایگریشن |
-| `erp_app` | فقط DML (select/insert/update/delete) و استفاده از sequenceها |
+| نقش               | دسترسی                                                        |
+| ----------------- | ------------------------------------------------------------- |
+| `erp_provisioner` | `CREATEDB` (ساخت، حذف و تغییر نام دیتابیس‌ها)                 |
+| `erp_migrator`    | owner جدول‌ها؛ فقط برای مایگریشن                              |
+| `erp_app`         | فقط DML (select/insert/update/delete) و استفاده از sequenceها |
 
 ### ۲.۷ ورود و تشخیص دیتابیس
 
@@ -503,6 +504,7 @@ model LostReason {
 ### ۴.۱ نکات مایگریشن دستی (SQL)
 
 مایگریشن اول (`0001_init`) شامل موارد زیر است که Prisma تولید نمی‌کند:
+
 1. `CREATE EXTENSION pg_trgm; CREATE EXTENSION unaccent;`
 2. پارتیشن‌دارکردن `audit_logs` و `timeline_events` (`PARTITION BY RANGE (occurred_at)`) + پارتیشن‌های ۳ ماه اول + پارتیشن `DEFAULT`
 3. `CHECK (id = 1)` روی `company_profile`
@@ -532,16 +534,16 @@ model LostReason {
 
 ### ۶.۱ جریان
 
-| مورد | تصمیم |
-|---|---|
-| رمز عبور | argon2id، حداقل ۱۰ کاراکتر، بررسی لیست رمزهای رایج |
-| Access token | JWT، ۱۵ دقیقه؛ claimها: `sub`، `type`، `db`، `sessionId` (بدون مجوزها) |
+| مورد          | تصمیم                                                                                               |
+| ------------- | --------------------------------------------------------------------------------------------------- |
+| رمز عبور      | argon2id، حداقل ۱۰ کاراکتر، بررسی لیست رمزهای رایج                                                  |
+| Access token  | JWT، ۱۵ دقیقه؛ claimها: `sub`، `type`، `db`، `sessionId` (بدون مجوزها)                              |
 | Refresh token | تصادفی ۶۴ بایت، فقط هش در دیتابیس شرکت، ۳۰ روز، **چرخشی** با تشخیص استفاده‌ی مجدد (ابطال کل family) |
-| ارسال | کوکی `HttpOnly + Secure + SameSite=Strict` برای وب؛ در بدنه برای اپ (هدر `X-Client: mobile`) |
-| قفل حساب | ۵ تلاش ناموفق ← قفل ۱۵ دقیقه؛ ثبت در `audit_logs` |
-| Rate limit | روی login بر اساس `db + ip` و `db + username` (Redis) |
-| خروج | از این دستگاه / از همه‌ی دستگاه‌ها |
-| مجوزها | کش Redis با کلید `db:userId`، ابطال هنگام تغییر گروه/مجوز |
+| ارسال         | کوکی `HttpOnly + Secure + SameSite=Strict` برای وب؛ در بدنه برای اپ (هدر `X-Client: mobile`)        |
+| قفل حساب      | ۵ تلاش ناموفق ← قفل ۱۵ دقیقه؛ ثبت در `audit_logs`                                                   |
+| Rate limit    | روی login بر اساس `db + ip` و `db + username` (Redis)                                               |
+| خروج          | از این دستگاه / از همه‌ی دستگاه‌ها                                                                  |
+| مجوزها        | کش Redis با کلید `db:userId`، ابطال هنگام تغییر گروه/مجوز                                           |
 
 ### ۶.۲ استراتژی‌ها
 
@@ -549,14 +551,14 @@ model LostReason {
 
 ### ۶.۳ گاردها
 
-| گارد | کار |
-|---|---|
-| `TenantMiddleware` | تشخیص دیتابیس (توکن/دامنه/هدر)، بررسی وجود و وضعیت MAINTENANCE |
-| `JwtAuthGuard` | اعتبار توکن، تطابق `db` توکن با دیتابیس درخواست، اعتبار نشست |
-| `UserTypeGuard` | جداسازی `INTERNAL` و `PORTAL` |
-| `PermissionGuard` | `@RequirePermission('contact.read')` |
-| `RecordRuleService` | تبدیل قانون به `where` (خواندن) و بررسی (نوشتن) |
-| `MasterAdminGuard` | فقط برای `/v1/admin/*`؛ توکن کوتاه‌عمر با `aud=admin` |
+| گارد                | کار                                                            |
+| ------------------- | -------------------------------------------------------------- |
+| `TenantMiddleware`  | تشخیص دیتابیس (توکن/دامنه/هدر)، بررسی وجود و وضعیت MAINTENANCE |
+| `JwtAuthGuard`      | اعتبار توکن، تطابق `db` توکن با دیتابیس درخواست، اعتبار نشست   |
+| `UserTypeGuard`     | جداسازی `INTERNAL` و `PORTAL`                                  |
+| `PermissionGuard`   | `@RequirePermission('contact.read')`                           |
+| `RecordRuleService` | تبدیل قانون به `where` (خواندن) و بررسی (نوشتن)                |
+| `MasterAdminGuard`  | فقط برای `/v1/admin/*`؛ توکن کوتاه‌عمر با `aud=admin`          |
 
 مسیر پورتال: `/v1/portal/*` فقط `PORTAL`؛ مسیرهای داخلی فقط `INTERNAL`.
 
@@ -574,11 +576,11 @@ CORS فقط دامنه‌های مجاز، helmet، اعتبارسنجی ورو�
 
 ```ts
 type DomainEvent<T = unknown> = {
-  id: string;              // UUIDv7، برای idempotency
-  type: string;            // 'quotation.created'
+  id: string; // UUIDv7، برای idempotency
+  type: string; // 'quotation.created'
   actorId: string | null;
   source: 'UI' | 'API' | 'IMPORT' | 'SYSTEM';
-  occurredAt: string;      // ISO
+  occurredAt: string; // ISO
   payload: T;
 };
 ```
@@ -629,19 +631,19 @@ registerTimelineEvent({
 
 ### ۸.۲ Database Manager (`/v1/admin`، فقط با master password)
 
-| متد | مسیر | توضیح |
-|---|---|---|
-| POST | `/login` | ورود با master password ← توکن ۱۵ دقیقه‌ای |
-| GET | `/databases` | فهرست: slug، نام شرکت، نسخه‌ی اسکیما، حجم، آخرین بکاپ، وضعیت |
-| POST | `/databases` | ساخت؛ بدنه: `name`، `adminUsername`، `adminFullName`، `adminPassword` |
-| POST | `/databases/:name/duplicate` | بدنه: `newName`، `neutralize` |
-| GET | `/databases/:name/backup` | دانلود zip (استریم) |
-| POST | `/databases/restore` | multipart: فایل، `newName`، `neutralize` |
-| DELETE | `/databases/:name` | بدنه: `confirmName` |
-| POST | `/databases/:name/upgrade` | اجرای مایگریشن |
-| PUT | `/databases/:name/domain` | تنظیم یا حذف دامنه |
-| POST | `/change-master-password` | |
-| GET | `/jobs/:id` | وضعیت و پیشرفت عملیات طولانی |
+| متد    | مسیر                         | توضیح                                                                 |
+| ------ | ---------------------------- | --------------------------------------------------------------------- |
+| POST   | `/login`                     | ورود با master password ← توکن ۱۵ دقیقه‌ای                            |
+| GET    | `/databases`                 | فهرست: slug، نام شرکت، نسخه‌ی اسکیما، حجم، آخرین بکاپ، وضعیت          |
+| POST   | `/databases`                 | ساخت؛ بدنه: `name`، `adminUsername`، `adminFullName`، `adminPassword` |
+| POST   | `/databases/:name/duplicate` | بدنه: `newName`، `neutralize`                                         |
+| GET    | `/databases/:name/backup`    | دانلود zip (استریم)                                                   |
+| POST   | `/databases/restore`         | multipart: فایل، `newName`، `neutralize`                              |
+| DELETE | `/databases/:name`           | بدنه: `confirmName`                                                   |
+| POST   | `/databases/:name/upgrade`   | اجرای مایگریشن                                                        |
+| PUT    | `/databases/:name/domain`    | تنظیم یا حذف دامنه                                                    |
+| POST   | `/change-master-password`    |                                                                       |
+| GET    | `/jobs/:id`                  | وضعیت و پیشرفت عملیات طولانی                                          |
 
 عملیات طولانی (ساخت، کپی، بکاپ، بازیابی، حذف) به‌صورت job اجرا می‌شوند و UI پیشرفت را نشان می‌دهد.
 
@@ -653,26 +655,26 @@ registerTimelineEvent({
 
 **Groups / Permissions / Teams / Record Rules:**
 
-| متد | مسیر | مجوز |
-|---|---|---|
-| GET/POST | `/v1/groups` | `group.read/create` |
-| GET/PATCH/DELETE | `/v1/groups/:id` | `group.read/update/delete` |
-| PUT | `/v1/groups/:id/permissions` | `group.update` |
-| GET | `/v1/permissions` | کاتالوگ مجوزها (از کد، گروه‌بندی‌شده) |
-| GET | `/v1/groups/:id/record-rules` | |
-| PUT | `/v1/groups/:id/record-rules/:resource` | `group.update` |
-| CRUD | `/v1/teams`، `/v1/teams/:id`، `/members` | `team.*` |
+| متد              | مسیر                                     | مجوز                                  |
+| ---------------- | ---------------------------------------- | ------------------------------------- |
+| GET/POST         | `/v1/groups`                             | `group.read/create`                   |
+| GET/PATCH/DELETE | `/v1/groups/:id`                         | `group.read/update/delete`            |
+| PUT              | `/v1/groups/:id/permissions`             | `group.update`                        |
+| GET              | `/v1/permissions`                        | کاتالوگ مجوزها (از کد، گروه‌بندی‌شده) |
+| GET              | `/v1/groups/:id/record-rules`            |                                       |
+| PUT              | `/v1/groups/:id/record-rules/:resource`  | `group.update`                        |
+| CRUD             | `/v1/teams`، `/v1/teams/:id`، `/members` | `team.*`                              |
 
 **شرکت و ارز:**
 
-| متد | مسیر | مجوز |
-|---|---|---|
-| GET | `/v1/settings/company` | همه‌ی کاربران داخلی (نام، لوگو) |
-| PATCH | `/v1/settings/company` | `company.manage` |
-| POST | `/v1/settings/company/logo` | `company.manage` |
-| GET | `/v1/currencies` | |
-| PATCH | `/v1/currencies/:code` (فعال/غیرفعال) | `currency.manage` |
-| PUT | `/v1/settings/company/default-currency` | `company.manage` |
+| متد   | مسیر                                    | مجوز                            |
+| ----- | --------------------------------------- | ------------------------------- |
+| GET   | `/v1/settings/company`                  | همه‌ی کاربران داخلی (نام، لوگو) |
+| PATCH | `/v1/settings/company`                  | `company.manage`                |
+| POST  | `/v1/settings/company/logo`             | `company.manage`                |
+| GET   | `/v1/currencies`                        |                                 |
+| PATCH | `/v1/currencies/:code` (فعال/غیرفعال)   | `currency.manage`               |
+| PUT   | `/v1/settings/company/default-currency` | `company.manage`                |
 
 **Settings (نمونه): دلایل باخت:** `GET/POST /v1/settings/lost-reasons`، `PATCH/DELETE /:id` (غیرفعال‌سازی)، `POST /reorder`.
 
@@ -712,13 +714,13 @@ modules/<name>/
 
 قواعد: TypeScript، RTL-safe (فقط `ms-/me-/ps-/pe-/start/end`)، استوری در Storybook، قابل‌دسترسی (Radix)، حالت تیره، بدون وابستگی به API، **ریسپانسیو (موبایل‌فرست)**.
 
-| دسته | کامپوننت |
-|---|---|
-| ساختار | `AppShell`، `Sidebar` (منوی ماژولار از رجیستری)، `Topbar`، `Breadcrumb`، `ControlPanel` (جستجو، فیلتر، گروه‌بندی) |
-| داده | `DataTable`، `ListView`، `FormView`، `StatusBar`، `Badge` |
-| فرم | `FormField`، `TextInput`، `TextArea`، `Select`، `ComboBox`، `Checkbox`، `Switch`، `MoneyInput`، `NumberInput`، `PhoneInput`، `JalaliDatePicker`، `JalaliDateRangePicker`، `TagInput` |
-| بازخورد | `Toast`، `ConfirmDialog`، `Dialog`، `Drawer`، `EmptyState`، `Skeleton`، `ErrorState`، `ProgressJob` (نمایش پیشرفت job) |
-| تاریخچه (پایه) | `Chatter` (پوسته)، `TimelineItem`، `LostDialog` |
+| دسته           | کامپوننت                                                                                                                                                                             |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ساختار         | `AppShell`، `Sidebar` (منوی ماژولار از رجیستری)، `Topbar`، `Breadcrumb`، `ControlPanel` (جستجو، فیلتر، گروه‌بندی)                                                                    |
+| داده           | `DataTable`، `ListView`، `FormView`، `StatusBar`، `Badge`                                                                                                                            |
+| فرم            | `FormField`، `TextInput`، `TextArea`، `Select`، `ComboBox`، `Checkbox`، `Switch`، `MoneyInput`، `NumberInput`، `PhoneInput`، `JalaliDatePicker`، `JalaliDateRangePicker`، `TagInput` |
+| بازخورد        | `Toast`، `ConfirmDialog`، `Dialog`، `Drawer`، `EmptyState`، `Skeleton`، `ErrorState`، `ProgressJob` (نمایش پیشرفت job)                                                               |
+| تاریخچه (پایه) | `Chatter` (پوسته)، `TimelineItem`، `LostDialog`                                                                                                                                      |
 
 `CompanySwitcher` وجود ندارد. نام شرکت (از `company_profile`) و لوگو در Topbar و Sidebar نمایش داده می‌شود.
 
@@ -773,18 +775,18 @@ Volumeها: `pgdata`، `filestore`، `backups`، `config` (master.json و domain
 
 ## ۱۲. تست و کیفیت
 
-| سطح | الزام |
-|---|---|
-| Unit | منطق service، utils (جلالی، اعتبارسنجی‌ها، cursor) |
-| Integration | با Postgres واقعی (Testcontainers) |
+| سطح                                 | الزام                                                                                                                                                                     |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit                                | منطق service، utils (جلالی، اعتبارسنجی‌ها، cursor)                                                                                                                        |
+| Integration                         | با Postgres واقعی (Testcontainers)                                                                                                                                        |
 | **ایزولاسیون چنددیتابیسی (اجباری)** | کاربر دیتابیس A نمی‌تواند با توکن خود به B برسد؛ ورود با کاربر A در دیتابیس B رد می‌شود؛ کلاینت‌ها هیچ‌وقت pool مشترک ندارند؛ کوئری یک درخواست فقط به دیتابیس خودش می‌رود |
-| **Provisioning** | خطا در هر مرحله ← هیچ دیتابیس یا پوشه‌ی ناقصی باقی نماند |
-| **بکاپ ← بازیابی** | بازیابی روی نام جدید، شمارش جدول‌ها و صحت چند رکورد، و فایل‌ها یکسان باشد؛ بکاپ قدیمی‌تر مایگریشن می‌شود؛ جدیدتر رد می‌شود |
-| **مایگریشن چندگانه** | خطا در یک دیتابیس بقیه را متوقف نکند |
-| Contract | هر endpoint در برابر شِمای zod |
-| دسترسی | تست‌های PermissionGuard و Record Rule |
-| e2e | ساخت دیتابیس، ورود، ساخت کاربر/گروه، تنظیم مجوز، ویرایش نام شرکت، CRUD دلایل باخت |
-| CI | lint + typecheck + test + build؛ مایگریشن روی دیتابیس خالی |
+| **Provisioning**                    | خطا در هر مرحله ← هیچ دیتابیس یا پوشه‌ی ناقصی باقی نماند                                                                                                                  |
+| **بکاپ ← بازیابی**                  | بازیابی روی نام جدید، شمارش جدول‌ها و صحت چند رکورد، و فایل‌ها یکسان باشد؛ بکاپ قدیمی‌تر مایگریشن می‌شود؛ جدیدتر رد می‌شود                                                |
+| **مایگریشن چندگانه**                | خطا در یک دیتابیس بقیه را متوقف نکند                                                                                                                                      |
+| Contract                            | هر endpoint در برابر شِمای zod                                                                                                                                            |
+| دسترسی                              | تست‌های PermissionGuard و Record Rule                                                                                                                                     |
+| e2e                                 | ساخت دیتابیس، ورود، ساخت کاربر/گروه، تنظیم مجوز، ویرایش نام شرکت، CRUD دلایل باخت                                                                                         |
+| CI                                  | lint + typecheck + test + build؛ مایگریشن روی دیتابیس خالی                                                                                                                |
 
 ---
 
@@ -792,22 +794,22 @@ Volumeها: `pgdata`، `filestore`، `backups`، `config` (master.json و domain
 
 هر گام با چک‌لیست تایید بسته می‌شود و commit/tag جدا دارد.
 
-| گام | محتوا |
-|---|---|
-| S1.1 | اسکلت مونوریپو، ابزارها، CI، Docker Compose، health |
-| S1.2 | اسکیمای Prisma، مایگریشن `0001_init` (پارتیشن، GRANT، CHECK)، seed |
-| S1.3 | زیرساخت چنددیتابیسی: TenantContext، TenantClientManager، TenantRunner، MigrationRunner، config-store |
-| S1.4 | Database Manager (API): ساخت، فهرست، کپی، بکاپ، بازیابی، حذف، ارتقا + تست‌های بند ۱۲ |
-| S1.5 | زیرساخت api: خطاها، pagination، zod، لاگ، تراکنش و مدیریت context |
-| S1.6 | Auth کامل (login با دیتابیس، refresh چرخشی، logout، قفل، sessions) |
-| S1.7 | Users، Company Profile، Currencies |
-| S1.8 | Groups، Permissions، Teams، Record Rules + تست‌های دسترسی |
-| S1.9 | Audit، Outbox، Event Bus، Timeline، Sequences |
-| S1.10 | `packages/utils` (جلالی، اعتبارسنجی ایرانی، money) + تست |
-| S1.11 | `packages/ui`: کامپوننت‌های پایه + Storybook + RTL |
-| S1.12 | AppShell، ورود، رجیستری ماژول، Database Manager UI، مدیریت کاربران/گروه‌ها، تنظیمات شرکت، PWA |
-| S1.13 | Settings Engine + دلایل باخت |
-| S1.14 | بکاپ شبانه، تست بازیابی، مستندات نهایی، تست پذیرش |
+| گام   | محتوا                                                                                                |
+| ----- | ---------------------------------------------------------------------------------------------------- |
+| S1.1  | اسکلت مونوریپو، ابزارها، CI، Docker Compose، health                                                  |
+| S1.2  | اسکیمای Prisma، مایگریشن `0001_init` (پارتیشن، GRANT، CHECK)، seed                                   |
+| S1.3  | زیرساخت چنددیتابیسی: TenantContext، TenantClientManager، TenantRunner، MigrationRunner، config-store |
+| S1.4  | Database Manager (API): ساخت، فهرست، کپی، بکاپ، بازیابی، حذف، ارتقا + تست‌های بند ۱۲                 |
+| S1.5  | زیرساخت api: خطاها، pagination، zod، لاگ، تراکنش و مدیریت context                                    |
+| S1.6  | Auth کامل (login با دیتابیس، refresh چرخشی، logout، قفل، sessions)                                   |
+| S1.7  | Users، Company Profile، Currencies                                                                   |
+| S1.8  | Groups، Permissions، Teams، Record Rules + تست‌های دسترسی                                            |
+| S1.9  | Audit، Outbox، Event Bus، Timeline، Sequences                                                        |
+| S1.10 | `packages/utils` (جلالی، اعتبارسنجی ایرانی، money) + تست                                             |
+| S1.11 | `packages/ui`: کامپوننت‌های پایه + Storybook + RTL                                                   |
+| S1.12 | AppShell، ورود، رجیستری ماژول، Database Manager UI، مدیریت کاربران/گروه‌ها، تنظیمات شرکت، PWA        |
+| S1.13 | Settings Engine + دلایل باخت                                                                         |
+| S1.14 | بکاپ شبانه، تست بازیابی، مستندات نهایی، تست پذیرش                                                    |
 
 ---
 

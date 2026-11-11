@@ -1,0 +1,13 @@
+@import '@fontsource/vazirmatn/index.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family:
+    'Vazirmatn',
+    system-ui,
+    -apple-system,
+    sans-serif;
+}

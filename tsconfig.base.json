@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "baseUrl": ".",
+    "paths": {
+      "@bodo/contracts": ["./packages/contracts/src/index.ts"],
+      "@bodo/contracts/*": ["./packages/contracts/src/*"],
+      "@bodo/utils": ["./packages/utils/src/index.ts"],
+      "@bodo/utils/*": ["./packages/utils/src/*"],
+      "@bodo/ui": ["./packages/ui/src/index.ts"],
+      "@bodo/ui/*": ["./packages/ui/src/*"]
+    }
+  }
+}
