@@ -23,6 +23,10 @@ Dockerfile* text eol=lf
 *nginx* text eol=lf
 *.conf text eol=lf
 
+# Windows batch scripts - strictly CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
 # Binary files
 *.png binary
 *.jpg binary
