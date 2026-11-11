@@ -20,6 +20,11 @@ async function bootstrapWorker() {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 
   logger.log('Worker is idling, waiting for jobs...', 'Worker');
+
+  // Keep event loop active until worker logic is expanded in subsequent stages
+  setInterval(() => {
+    // idle heartbeat
+  }, 60000);
 }
 
 bootstrapWorker().catch((err) => {

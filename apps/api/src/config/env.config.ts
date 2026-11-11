@@ -37,12 +37,8 @@ export type EnvConfig = z.infer<typeof EnvSchema>;
 
 let parsedEnv: EnvConfig | null = null;
 
-export function getEnv(): EnvConfig {
-  if (parsedEnv) {
-    return parsedEnv;
-  }
-
-  const result = EnvSchema.safeParse(process.env);
+export function validateEnv(rawEnv: NodeJS.ProcessEnv): EnvConfig {
+  const result = EnvSchema.safeParse(rawEnv);
   if (!result.success) {
     const errorDetails = result.error.issues
       .map((issue) => ` - [${issue.path.join('.')}] ${issue.message}`)
@@ -51,7 +47,13 @@ export function getEnv(): EnvConfig {
     console.error(msg);
     throw new Error(msg);
   }
+  return result.data;
+}
 
-  parsedEnv = result.data;
+export function getEnv(): EnvConfig {
+  if (parsedEnv) {
+    return parsedEnv;
+  }
+  parsedEnv = validateEnv(process.env);
   return parsedEnv;
 }

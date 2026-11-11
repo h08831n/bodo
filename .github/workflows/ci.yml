@@ -57,13 +57,35 @@ jobs:
 
   docker-verify:
     name: Verify Docker Builds
+    needs: quality
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable Corepack & Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.18.0 --activate
+
+      - name: Copy .env
+        run: cp .env.example .env
+
+      - name: Install dependencies & Build
+        run: |
+          pnpm install --frozen-lockfile=false
+          pnpm build
 
       - name: Build API Docker Image
         run: docker build -f apps/api/Dockerfile -t bodo-api:ci .
 
       - name: Build Web Docker Image
         run: docker build -f apps/web/Dockerfile -t bodo-web:ci .
+
+      - name: Verify Docker Compose config
+        run: docker compose -f infra/docker-compose.yml config
