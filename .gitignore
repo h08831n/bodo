@@ -28,11 +28,11 @@ coverage/
 .nyc_output/
 
 # Data volumes / persistent storage
-data/
-pgdata/
-filestore/
-backups/
-config/
+/data/
+/pgdata/
+/filestore/
+/backups/
+/config/
 
 # OS files
 .DS_Store
