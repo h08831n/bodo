@@ -52,8 +52,33 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Build Storybook
+        run: pnpm --filter @bodo/ui build-storybook
+
       - name: Test (Unit tests & Check no external URLs)
         run: pnpm test
+
+      - name: API Smoke Test (Background boot & health/live probe)
+        shell: bash
+        run: |
+          node apps/api/dist/main.js &
+          API_PID=$!
+          SUCCESS=0
+          for i in {1..30}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/health/live || true)
+            if [ "$STATUS" = "200" ]; then
+              echo "API booted successfully and /health/live responded with 200 OK"
+              SUCCESS=1
+              break
+            fi
+            echo "Waiting for API (attempt $i, status: $STATUS)..."
+            sleep 1
+          done
+          kill -9 $API_PID || true
+          if [ "$SUCCESS" -ne 1 ]; then
+            echo "Smoke test failed: /health/live did not return 200 OK"
+            exit 1
+          fi
 
   docker-verify:
     name: Verify Docker Builds
@@ -88,4 +113,4 @@ jobs:
         run: docker build -f apps/web/Dockerfile -t bodo-web:ci .
 
       - name: Verify Docker Compose config
-        run: docker compose -f infra/docker-compose.yml config
+        run: docker compose --env-file .env -f infra/docker-compose.yml config

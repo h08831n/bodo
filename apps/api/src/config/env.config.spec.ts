@@ -1,6 +1,16 @@
 import { validateEnv } from './env.config';
 
 describe('Environment Configuration Validation', () => {
+  let consoleErrorSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    // Mock console.error to keep unit test logs clean while testing failure cases
+    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
+  });
   const validEnv = {
     NODE_ENV: 'development',
     PORT: '3000',

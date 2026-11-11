@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-postgres}
     # Notice: ports are NOT published to host to enforce network isolation.
     # Postgres is only reachable via internal Docker network.
@@ -22,12 +22,21 @@ services:
     image: redis:7-alpine
     container_name: bodo-redis
     restart: unless-stopped
-    command: ['sh', '-c', 'exec redis-server --requirepass "${REDIS_PASSWORD:-redispassword}"']
+    command:
+      [
+        'sh',
+        '-c',
+        'exec redis-server --requirepass "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"',
+      ]
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-redispassword}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     # Notice: ports are NOT published to host. Only internal Docker network access.
     healthcheck:
-      test: ['CMD-SHELL', 'redis-cli -a "${REDIS_PASSWORD:-redispassword}" ping | grep PONG']
+      test:
+        [
+          'CMD-SHELL',
+          'redis-cli -a "${REDIS_PASSWORD:?REDIS_PASSWORD is required}" ping | grep PONG',
+        ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -46,17 +55,17 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres}
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redispassword}@redis:6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-redispassword}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-postgres}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:80,http://localhost:5173}
-      MASTER_PASSWORD_INITIAL: ${MASTER_PASSWORD_INITIAL:-MasterSecurePassword2026!}
+      MASTER_PASSWORD_INITIAL: ${MASTER_PASSWORD_INITIAL:?MASTER_PASSWORD_INITIAL is required}
       DB_MANAGER_ENABLED: ${DB_MANAGER_ENABLED:-true}
       DB_MANAGER_ALLOWED_IPS: ${DB_MANAGER_ALLOWED_IPS:-}
       DB_LIST_PUBLIC: ${DB_LIST_PUBLIC:-false}
       AUTO_MIGRATE: ${AUTO_MIGRATE:-false}
-      JWT_SECRET: ${JWT_SECRET:-SuperSecretJwtKey2026Min16Chars!}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
       PG_BIN_PATH: /usr/bin
     # Notice: API port 3000 is NOT exposed directly on host; only accessible through Nginx reverse proxy.
     volumes:
@@ -84,14 +93,14 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-postgres}
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redispassword}@redis:6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-redispassword}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-postgres}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
-      MASTER_PASSWORD_INITIAL: ${MASTER_PASSWORD_INITIAL:-MasterSecurePassword2026!}
+      MASTER_PASSWORD_INITIAL: ${MASTER_PASSWORD_INITIAL:?MASTER_PASSWORD_INITIAL is required}
       DB_MANAGER_ENABLED: 'false'
-      JWT_SECRET: ${JWT_SECRET:-SuperSecretJwtKey2026Min16Chars!}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
     volumes:
       - filestore:/data/filestore
       - backups:/data/backups

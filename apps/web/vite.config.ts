@@ -12,6 +12,10 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    headers: {
+      'Content-Security-Policy':
+        "default-src 'self'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self' ws://localhost:* ws://127.0.0.1:* http://localhost:*; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; object-src 'none';",
+    },
     proxy: {
       '/v1': {
         target: 'http://localhost:3000',

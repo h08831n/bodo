@@ -1,9 +1,22 @@
 import { z } from 'zod';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
+import * as fs from 'fs';
 
-// Load .env file if available
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+// Load .env file from current working directory or traverse up to monorepo root
+const candidateEnvPaths = [
+  path.resolve(process.cwd(), '.env'),
+  path.resolve(process.cwd(), '../../.env'),
+  path.resolve(__dirname, '../../../.env'),
+  path.resolve(__dirname, '../../../../.env'),
+];
+
+for (const envPath of candidateEnvPaths) {
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+    break;
+  }
+}
 
 export const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -45,6 +58,8 @@ export function validateEnv(rawEnv: NodeJS.ProcessEnv): EnvConfig {
       .map((issue) => ` - [${issue.path.join('.')}] ${issue.message}`)
       .join('\n');
     const msg = `[CRITICAL] Application failed to boot due to invalid/missing environment variables:\n${errorDetails}`;
+    // Direct console.error is intentionally used here during early bootstrapping
+    // before the NestJS application context and Pino Logger are initialized.
     console.error(msg);
     throw new Error(msg);
   }
