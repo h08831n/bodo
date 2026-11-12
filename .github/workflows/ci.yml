@@ -237,9 +237,12 @@ jobs:
 
       - name: Run Developer Database Setup (pnpm db:setup-dev)
         run: |
-          pnpm db:setup-dev || {
-            echo "=== pnpm db:setup-dev failed! Inspecting docker logs ==="
-            docker logs bodo-postgres-dev
+          pnpm db:setup-dev 2>&1 | tee setup_output.log || {
+            ERR_MSG=$(tail -n 25 setup_output.log | tr '\n' ' ' | tr '"' "'")
+            echo "::error title=DevSetupFailed::$ERR_MSG"
+            docker logs bodo-postgres-dev > docker_pg.log 2>&1
+            PG_LOG=$(tail -n 25 docker_pg.log | tr '\n' ' ' | tr '"' "'")
+            echo "::error title=PostgresLogs::$PG_LOG"
             exit 1
           }
 
