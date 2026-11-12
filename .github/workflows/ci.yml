@@ -248,15 +248,15 @@ jobs:
 
       - name: Verify erp_dev contents (4 currencies, 7 lost reasons)
         run: |
-          docker exec bodo-postgres-dev psql -U erp_app -d erp_dev -c "SELECT code, decimals FROM currencies;"
-          CURR_COUNT=$(docker exec bodo-postgres-dev psql -U erp_app -d erp_dev -t -A -c "SELECT COUNT(*) FROM currencies;")
+          docker exec -e PGPASSWORD=app_secret_change_in_prod bodo-postgres-dev psql -U erp_app -d erp_dev -c "SELECT code, decimals FROM currencies;"
+          CURR_COUNT=$(docker exec -e PGPASSWORD=app_secret_change_in_prod bodo-postgres-dev psql -U erp_app -d erp_dev -t -A -c "SELECT COUNT(*) FROM currencies;")
           if [ "$CURR_COUNT" -ne 4 ]; then
             echo "Expected 4 currencies, found $CURR_COUNT"
             exit 1
           fi
 
-          docker exec bodo-postgres-dev psql -U erp_app -d erp_dev -c "SELECT name, applies_to FROM lost_reasons;"
-          REASONS_COUNT=$(docker exec bodo-postgres-dev psql -U erp_app -d erp_dev -t -A -c "SELECT COUNT(*) FROM lost_reasons;")
+          docker exec -e PGPASSWORD=app_secret_change_in_prod bodo-postgres-dev psql -U erp_app -d erp_dev -c "SELECT name, applies_to FROM lost_reasons;"
+          REASONS_COUNT=$(docker exec -e PGPASSWORD=app_secret_change_in_prod bodo-postgres-dev psql -U erp_app -d erp_dev -t -A -c "SELECT COUNT(*) FROM lost_reasons;")
           if [ "$REASONS_COUNT" -ne 7 ]; then
             echo "Expected 7 lost reasons, found $REASONS_COUNT"
             exit 1
