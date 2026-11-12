@@ -81,15 +81,13 @@ async function run() {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch (execErr) {
-      // If prisma migrate diff exits with non-zero or error
+      // If prisma migrate diff exits with non-zero, it is a fatal failure
       const stdout = execErr.stdout ? execErr.stdout.toString() : '';
       const stderr = execErr.stderr ? execErr.stderr.toString() : '';
-      if (!stdout && stderr) {
-        console.error('[ERROR] Failed to execute prisma migrate diff:');
-        console.error(stderr);
-        process.exit(1);
-      }
-      rawOutput = stdout;
+      console.error('[ERROR] Failed to execute prisma migrate diff:');
+      if (stderr) console.error(stderr);
+      if (stdout) console.error(stdout);
+      process.exit(1);
     }
 
     const { isClean, unexpectedDiffs } = filterDrift(rawOutput);
