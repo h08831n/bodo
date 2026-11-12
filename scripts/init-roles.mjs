@@ -12,11 +12,18 @@ import process from 'node:process';
 const { Pool } = pg;
 
 // Read configuration from environment
-const superuserUrl = process.env.DATABASE_URL || `postgresql://${process.env.POSTGRES_USER || 'postgres'}:${process.env.POSTGRES_PASSWORD || 'postgres'}@localhost:${process.env.POSTGRES_PORT || 5433}/postgres`;
+const superuserUrl =
+  process.env.DATABASE_URL ||
+  `postgresql://${process.env.POSTGRES_USER || 'postgres'}:${process.env.POSTGRES_PASSWORD || 'postgres'}@localhost:${process.env.POSTGRES_PORT || 5433}/postgres`;
 
-const provisionerPassword = process.env.ERP_PROVISIONER_PASSWORD || 'provisioner_secret_change_in_prod';
+const provisionerPassword =
+  process.env.ERP_PROVISIONER_PASSWORD || 'provisioner_secret_change_in_prod';
 const migratorPassword = process.env.ERP_MIGRATOR_PASSWORD || 'migrator_secret_change_in_prod';
 const appPassword = process.env.ERP_APP_PASSWORD || 'app_secret_change_in_prod';
+
+function escapeSqlLiteral(str) {
+  return "'" + String(str).replace(/'/g, "''") + "'";
+}
 
 async function initRoles() {
   console.log('[init-roles] Connecting to PostgreSQL superuser database...');
@@ -28,7 +35,9 @@ async function initRoles() {
   const client = await pool.connect();
 
   try {
-    console.log('[init-roles] Ensuring database isolation roles exist and passwords are synchronized...');
+    console.log(
+      '[init-roles] Ensuring database isolation roles exist and passwords are synchronized...',
+    );
 
     // 1. erp_provisioner (LOGIN CREATEDB)
     await client.query(`
@@ -39,7 +48,9 @@ async function initRoles() {
         END IF;
       END $$;
     `);
-    await client.query(`ALTER ROLE erp_provisioner WITH LOGIN CREATEDB PASSWORD $1;`, [provisionerPassword]);
+    await client.query(
+      `ALTER ROLE erp_provisioner WITH LOGIN CREATEDB PASSWORD ${escapeSqlLiteral(provisionerPassword)};`,
+    );
     console.log('  ✓ Role erp_provisioner verified (LOGIN CREATEDB)');
 
     // 2. erp_migrator (LOGIN)
@@ -51,7 +62,9 @@ async function initRoles() {
         END IF;
       END $$;
     `);
-    await client.query(`ALTER ROLE erp_migrator WITH LOGIN PASSWORD $1;`, [migratorPassword]);
+    await client.query(
+      `ALTER ROLE erp_migrator WITH LOGIN PASSWORD ${escapeSqlLiteral(migratorPassword)};`,
+    );
     console.log('  ✓ Role erp_migrator verified (LOGIN)');
 
     // 3. erp_app (LOGIN)
@@ -63,7 +76,7 @@ async function initRoles() {
         END IF;
       END $$;
     `);
-    await client.query(`ALTER ROLE erp_app WITH LOGIN PASSWORD $1;`, [appPassword]);
+    await client.query(`ALTER ROLE erp_app WITH LOGIN PASSWORD ${escapeSqlLiteral(appPassword)};`);
     console.log('  ✓ Role erp_app verified (LOGIN)');
 
     // 4. PostgreSQL 15+ ownership grant: erp_provisioner must be a member of erp_migrator

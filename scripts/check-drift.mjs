@@ -19,7 +19,8 @@ async function run() {
 
   // If no shadow database URL is provided, try to create an ephemeral one
   if (!shadowUrl) {
-    const rawUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5433/postgres';
+    const rawUrl =
+      process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5433/postgres';
     const parsed = new URL(rawUrl);
 
     // Use admin/superuser to create temp db
@@ -34,15 +35,19 @@ async function run() {
     try {
       await adminClient.connect();
       console.log(`[INFO] Creating ephemeral shadow database "${tempDbName}"...`);
-      await adminClient.query(`CREATE DATABASE "${tempDbName}"`);
+      await adminClient.query(`CREATE DATABASE "${tempDbName}" OWNER erp_migrator`);
       createdTempDb = true;
 
-      // Shadow URL with erp_migrator or postgres user
+      // Shadow URL with erp_migrator credentials for migration execution
+      parsed.username = 'erp_migrator';
+      parsed.password = process.env.ERP_MIGRATOR_PASSWORD || 'migrator_secret_change_in_prod';
       parsed.pathname = `/${tempDbName}`;
       shadowUrl = parsed.toString();
     } catch (err) {
       console.warn(`[WARN] Could not create ephemeral shadow database: ${err.message}`);
-      console.warn('[INFO] Attempting drift diff without explicit shadow-database-url (if supported)...');
+      console.warn(
+        '[INFO] Attempting drift diff without explicit shadow-database-url (if supported)...',
+      );
     } finally {
       await adminClient.end().catch(() => {});
     }
@@ -75,7 +80,9 @@ async function run() {
     const { isClean, unexpectedDiffs } = filterDrift(rawOutput);
 
     if (!isClean) {
-      console.error('[ERROR] Schema drift detected! Found unexpected differences between migrations and schema:');
+      console.error(
+        '[ERROR] Schema drift detected! Found unexpected differences between migrations and schema:',
+      );
       for (const diff of unexpectedDiffs) {
         console.error('---');
         console.error(diff.trim());
@@ -83,11 +90,14 @@ async function run() {
       process.exit(1);
     }
 
-    console.log('[OK] Database schema and migrations are fully in sync (expected partition noise filtered).');
+    console.log(
+      '[OK] Database schema and migrations are fully in sync (expected partition noise filtered).',
+    );
   } finally {
     if (createdTempDb) {
       try {
-        const rawUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5433/postgres';
+        const rawUrl =
+          process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5433/postgres';
         const parsed = new URL(rawUrl);
         const adminClient = new Client({
           host: parsed.hostname,

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "nest build",
+    "build": "prisma generate && nest build",
     "dev": "nest start --watch",
     "start": "node dist/main.js",
     "start:worker": "node dist/worker.js",
@@ -13,7 +13,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:integration": "jest --config test/jest-integration.json --runInBand",
-    "postinstall": "prisma generate",
+    "postinstall": "prisma generate || true",
     "clean": "rimraf dist"
   },
   "prisma": {
