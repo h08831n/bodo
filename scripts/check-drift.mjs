@@ -23,33 +23,48 @@ async function run() {
       process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5433/postgres';
     const parsed = new URL(rawUrl);
 
-    // Use admin/superuser to create temp db
-    const adminClient = new Client({
-      host: parsed.hostname,
-      port: parseInt(parsed.port || '5432', 10),
-      user: process.env.POSTGRES_USER || parsed.username || 'postgres',
-      password: process.env.POSTGRES_PASSWORD || parsed.password || 'postgres',
-      database: 'postgres',
-    });
+    const hosts = [parsed.hostname];
+    if (parsed.hostname === 'localhost') hosts.push('127.0.0.1');
 
-    try {
-      await adminClient.connect();
-      console.log(`[INFO] Creating ephemeral shadow database "${tempDbName}"...`);
-      await adminClient.query(`CREATE DATABASE "${tempDbName}" OWNER erp_migrator`);
-      createdTempDb = true;
+    let adminClient = null;
+    for (let attempt = 1; attempt <= 20; attempt++) {
+      for (const h of hosts) {
+        try {
+          const client = new Client({
+            host: h,
+            port: parseInt(parsed.port || '5432', 10),
+            user: process.env.POSTGRES_USER || parsed.username || 'postgres',
+            password: process.env.POSTGRES_PASSWORD || parsed.password || 'postgres',
+            database: 'postgres',
+          });
+          await client.connect();
+          adminClient = client;
+          parsed.hostname = h;
+          break;
+        } catch {
+          // retry
+        }
+      }
+      if (adminClient) break;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
 
-      // Shadow URL with erp_migrator credentials for migration execution
-      parsed.username = 'erp_migrator';
-      parsed.password = process.env.ERP_MIGRATOR_PASSWORD || 'migrator_secret_change_in_prod';
-      parsed.pathname = `/${tempDbName}`;
-      shadowUrl = parsed.toString();
-    } catch (err) {
-      console.warn(`[WARN] Could not create ephemeral shadow database: ${err.message}`);
-      console.warn(
-        '[INFO] Attempting drift diff without explicit shadow-database-url (if supported)...',
-      );
-    } finally {
-      await adminClient.end().catch(() => {});
+    if (adminClient) {
+      try {
+        console.log(`[INFO] Creating ephemeral shadow database "${tempDbName}"...`);
+        await adminClient.query(`CREATE DATABASE "${tempDbName}" OWNER erp_migrator`);
+        createdTempDb = true;
+
+        // Shadow URL with erp_migrator credentials for migration execution
+        parsed.username = 'erp_migrator';
+        parsed.password = process.env.ERP_MIGRATOR_PASSWORD || 'migrator_secret_change_in_prod';
+        parsed.pathname = `/${tempDbName}`;
+        shadowUrl = parsed.toString();
+      } catch (err) {
+        console.warn(`[WARN] Could not create ephemeral shadow database: ${err.message}`);
+      } finally {
+        await adminClient.end().catch(() => {});
+      }
     }
   }
 

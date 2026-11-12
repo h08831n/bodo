@@ -57,14 +57,33 @@ describe('PostgreSQL 16 Database Integration Tests (S1.2)', () => {
       }
     }
 
-    // Initialize cluster roles as superuser
-    const superClient = new Client({ connectionString: superuserUrl });
-    try {
-      await superClient.connect();
-    } catch (connErr: unknown) {
-      const message = connErr instanceof Error ? connErr.message : String(connErr);
-      // If PostgreSQL is unreachable, skip tests gracefully with descriptive notice
-      console.warn(`[SKIP] PostgreSQL is not accessible at ${superuserUrl}: ${message}`);
+    // Initialize cluster roles as superuser with retry
+    let superClient: Client | null = null;
+    const candidates = [superuserUrl];
+    if (superuserUrl.includes('@localhost:')) {
+      candidates.push(superuserUrl.replace('@localhost:', '@127.0.0.1:'));
+    }
+
+    for (let attempt = 1; attempt <= 20; attempt++) {
+      for (const url of candidates) {
+        try {
+          const client = new Client({ connectionString: url });
+          await client.connect();
+          superClient = client;
+          superuserUrl = url;
+          const parsed = new URL(url);
+          host = parsed.hostname;
+          break;
+        } catch {
+          // retry
+        }
+      }
+      if (superClient) break;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+
+    if (!superClient) {
+      console.warn(`[SKIP] PostgreSQL is not accessible at ${superuserUrl} after retries.`);
       return;
     }
 

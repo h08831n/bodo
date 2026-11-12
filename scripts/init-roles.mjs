@@ -25,14 +25,42 @@ function escapeSqlLiteral(str) {
   return "'" + String(str).replace(/'/g, "''") + "'";
 }
 
+async function connectSuperuserWithRetry() {
+  const rawUrl =
+    process.env.DATABASE_URL ||
+    `postgresql://${process.env.POSTGRES_USER || 'postgres'}:${process.env.POSTGRES_PASSWORD || 'postgres'}@localhost:${process.env.POSTGRES_PORT || 5433}/postgres`;
+
+  const candidates = [rawUrl];
+  if (rawUrl.includes('@localhost:')) {
+    candidates.push(rawUrl.replace('@localhost:', '@127.0.0.1:'));
+  } else if (rawUrl.includes('@127.0.0.1:')) {
+    candidates.push(rawUrl.replace('@127.0.0.1:', '@localhost:'));
+  }
+
+  let lastError;
+  for (let attempt = 1; attempt <= 20; attempt++) {
+    for (const url of candidates) {
+      try {
+        const pool = new Pool({
+          connectionString: url,
+          connectionTimeoutMillis: 3000,
+        });
+        const client = await pool.connect();
+        return { pool, client, url };
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    console.log(`[init-roles] Waiting for PostgreSQL to accept connections (attempt ${attempt}/20)...`);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw lastError;
+}
+
 async function initRoles() {
   console.log('[init-roles] Connecting to PostgreSQL superuser database...');
-  const pool = new Pool({
-    connectionString: superuserUrl,
-    connectionTimeoutMillis: 5000,
-  });
-
-  const client = await pool.connect();
+  const { pool, client, url } = await connectSuperuserWithRetry();
+  console.log(`[init-roles] Connected via ${url.replace(/:[^:]+@/, ':****@')}`);
 
   try {
     console.log(

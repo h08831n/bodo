@@ -168,11 +168,15 @@ jobs:
 
       - name: Initialize Database Roles
         run: pnpm db:init-roles
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
 
       - name: Check Database Schema Drift
         run: pnpm db:check-drift
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
 
       - name: Run Database Integration Tests
         run: pnpm test:integration
         env:
-          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
+          TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
