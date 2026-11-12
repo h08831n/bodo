@@ -30,11 +30,12 @@ async function runSeed() {
   }
 
   const seedScript = path.resolve(projectRoot, 'apps/api/prisma/seed.ts');
+  const tsconfigPath = path.resolve(projectRoot, 'apps/api/tsconfig.json');
   const res = spawnSync(
     process.execPath,
-    [tsxCli, seedScript],
+    [tsxCli, '--tsconfig', tsconfigPath, seedScript],
     {
-      cwd: projectRoot,
+      cwd: path.resolve(projectRoot, 'apps/api'),
       env,
       stdio: 'inherit',
       shell: false,

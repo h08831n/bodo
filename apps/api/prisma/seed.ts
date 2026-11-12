@@ -13,16 +13,16 @@ async function main() {
   >`
     SELECT current_database(), current_user;
   `;
+  console.info(`[seed] Connected target database:`, dbInfo);
 
   const result = await seedBaseline(prisma);
   console.info(`[seed] SUCCESS: Baseline seed applied successfully:`, result);
-  console.log(`::error title=SeedCheck::${JSON.stringify({ dbUrl: maskedUrl, dbInfo, result })}`);
 }
 
 main()
   .catch((e) => {
     console.error('[seed] ERROR:', e);
-    console.log(`::error title=SeedError::${String(e?.message || e).replace(/[\r\n]+/g, ' ')}`);
+    console.error(`::error title=SeedError::${String(e?.message || e).replace(/[\r\n]+/g, ' ')}`);
     process.exit(1);
   })
   .finally(async () => {

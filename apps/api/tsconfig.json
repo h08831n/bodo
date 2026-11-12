@@ -10,7 +10,13 @@
     "emitDecoratorMetadata": true,
     "outDir": "./dist",
     "types": ["node", "jest"],
-    "paths": {}
+    "baseUrl": ".",
+    "paths": {
+      "@bodo/contracts": ["../../packages/contracts/src/index.ts"],
+      "@bodo/contracts/*": ["../../packages/contracts/src/*"],
+      "@bodo/utils": ["../../packages/utils/src/index.ts"],
+      "@bodo/utils/*": ["../../packages/utils/src/*"]
+    }
   },
   "include": ["src/**/*", "test/**/*"]
 }
