@@ -7,6 +7,8 @@ dist/
 build/
 .turbo/
 storybook-static/
+.vite/
+.dev-server.*
 
 # Environment variables & secrets
 .env
