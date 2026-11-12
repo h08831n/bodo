@@ -330,8 +330,8 @@ describe('PostgreSQL 16 Database Integration Tests (S1.2)', () => {
       await expect(
         appClient.query(
           `
-          INSERT INTO users (id, username, password_hash, type, status, created_at, updated_at)
-          VALUES ($1, 'AdminUser', 'hash', 'INTERNAL', 'ACTIVE', NOW(), NOW());
+          INSERT INTO users (id, username, password_hash, full_name, type, status, created_at, updated_at)
+          VALUES ($1, 'AdminUser', 'hash', 'Admin User', 'INTERNAL', 'ACTIVE', NOW(), NOW());
         `,
           [userId],
         ),
@@ -340,8 +340,8 @@ describe('PostgreSQL 16 Database Integration Tests (S1.2)', () => {
       // Valid lowercase username succeeds
       await appClient.query(
         `
-        INSERT INTO users (id, username, password_hash, type, status, created_at, updated_at)
-        VALUES ($1, 'adminuser', 'hash', 'INTERNAL', 'ACTIVE', NOW(), NOW());
+        INSERT INTO users (id, username, password_hash, full_name, type, status, created_at, updated_at)
+        VALUES ($1, 'adminuser', 'hash', 'Admin User', 'INTERNAL', 'ACTIVE', NOW(), NOW());
       `,
         [userId],
       );
@@ -413,7 +413,7 @@ describe('PostgreSQL 16 Database Integration Tests (S1.2)', () => {
       expect(lostReasons).toBe(7);
 
       const setting = await prisma.systemSetting.findUnique({ where: { key: 'neutralized' } });
-      expect(setting?.value).toBe('false');
+      expect(setting?.value).toBe(false);
 
       // Second seed run (must execute cleanly with 0 errors and zero duplicates)
       const secondRun = await seedBaseline(prisma);
