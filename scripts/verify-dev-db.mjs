@@ -21,6 +21,10 @@ async function verifyDevDb() {
 
   const { pool, client } = conn;
   try {
+    const infoRes = await client.query('SELECT current_database(), current_user;');
+    console.log(`[db:verify-dev] Connected DB Info:`, infoRes.rows[0]);
+    console.log(`::warning title=VerifyDbInfo::${JSON.stringify(infoRes.rows[0])}`);
+
     const curRes = await client.query('SELECT code, name, decimals FROM currencies ORDER BY sort_order;');
     console.log(`[db:verify-dev] Currencies (${curRes.rowCount}):`);
     for (const r of curRes.rows) {
