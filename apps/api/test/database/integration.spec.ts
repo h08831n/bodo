@@ -207,11 +207,12 @@ describe('PostgreSQL 16 Database Integration Tests (S1.2)', () => {
 
       // audit_logs: append-only (INSERT and SELECT succeed; UPDATE and DELETE fail)
       const auditLogId = newId();
+      const entityId = newId();
       const now = new Date();
       await appClient.query(
         `INSERT INTO audit_logs (id, occurred_at, action, entity_type, entity_id)
-         VALUES ($1, $2, 'INSERT', 'currency', 'TST');`,
-        [auditLogId, now],
+         VALUES ($1, $2, 'INSERT', 'currency', $3);`,
+        [auditLogId, now, entityId],
       );
 
       const auditSelect = await appClient.query(
@@ -244,6 +245,7 @@ describe('PostgreSQL 16 Database Integration Tests (S1.2)', () => {
 
     try {
       const currentLogId = newId();
+      const currentActorId = newId();
       const now = new Date();
       // Current month partition e.g. audit_logs_p202611
       const year = now.getUTCFullYear();
@@ -252,8 +254,8 @@ describe('PostgreSQL 16 Database Integration Tests (S1.2)', () => {
 
       await appClient.query(
         `INSERT INTO audit_logs (id, occurred_at, action, entity_type, entity_id)
-         VALUES ($1, $2, 'LOGIN', 'user', 'user_123');`,
-        [currentLogId, now],
+         VALUES ($1, $2, 'LOGIN', 'user', $3);`,
+        [currentLogId, now, currentActorId],
       );
 
       // Verify row is physically routed to the current month partition
@@ -265,11 +267,12 @@ describe('PostgreSQL 16 Database Integration Tests (S1.2)', () => {
 
       // Far future row routes to DEFAULT partition
       const futureLogId = newId();
+      const futureActorId = newId();
       const farFuture = new Date('2099-01-01T00:00:00Z');
       await appClient.query(
         `INSERT INTO audit_logs (id, occurred_at, action, entity_type, entity_id)
-         VALUES ($1, $2, 'FUTURE_EVENT', 'system', 'sys_1');`,
-        [futureLogId, farFuture],
+         VALUES ($1, $2, 'FUTURE_EVENT', 'system', $3);`,
+        [futureLogId, farFuture, futureActorId],
       );
 
       const defaultPartitionCheck = await appClient.query(
@@ -327,7 +330,7 @@ describe('PostgreSQL 16 Database Integration Tests (S1.2)', () => {
       await expect(
         appClient.query(
           `
-          INSERT INTO users (id, username, password_hash, user_type, status, created_at, updated_at)
+          INSERT INTO users (id, username, password_hash, type, status, created_at, updated_at)
           VALUES ($1, 'AdminUser', 'hash', 'INTERNAL', 'ACTIVE', NOW(), NOW());
         `,
           [userId],
@@ -337,7 +340,7 @@ describe('PostgreSQL 16 Database Integration Tests (S1.2)', () => {
       // Valid lowercase username succeeds
       await appClient.query(
         `
-        INSERT INTO users (id, username, password_hash, user_type, status, created_at, updated_at)
+        INSERT INTO users (id, username, password_hash, type, status, created_at, updated_at)
         VALUES ($1, 'adminuser', 'hash', 'INTERNAL', 'ACTIVE', NOW(), NOW());
       `,
         [userId],
@@ -347,26 +350,27 @@ describe('PostgreSQL 16 Database Integration Tests (S1.2)', () => {
       const eventId1 = newId();
       const eventId2 = newId();
       const sourceEventId = newId();
+      const subjectId = newId();
       const occurredAt = new Date();
 
       await appClient.query(
         `
-        INSERT INTO timeline_events (id, occurred_at, source_event_id, subject_type, subject_id, event_type, summary)
-        VALUES ($1, $2, $3, 'lead', 'lead_100', 'NOTE_ADDED', 'First summary');
+        INSERT INTO timeline_events (id, occurred_at, source_event_id, subject_type, subject_id, event_type, title, summary)
+        VALUES ($1, $2, $3, 'lead', $4, 'NOTE_ADDED', 'First title', 'First summary');
       `,
-        [eventId1, occurredAt, sourceEventId],
+        [eventId1, occurredAt, sourceEventId, subjectId],
       );
 
       // Duplicate insertion with exact same (source_event_id, subject_type, subject_id, occurred_at) must fail
       await expect(
         appClient.query(
           `
-          INSERT INTO timeline_events (id, occurred_at, source_event_id, subject_type, subject_id, event_type, summary)
-          VALUES ($1, $2, $3, 'lead', 'lead_100', 'NOTE_ADDED', 'Duplicate summary');
+          INSERT INTO timeline_events (id, occurred_at, source_event_id, subject_type, subject_id, event_type, title, summary)
+          VALUES ($1, $2, $3, 'lead', $4, 'NOTE_ADDED', 'Duplicate title', 'Duplicate summary');
         `,
-          [eventId2, occurredAt, sourceEventId],
+          [eventId2, occurredAt, sourceEventId, subjectId],
         ),
-      ).rejects.toThrow(/timeline_events_unique_source_idx|duplicate key value/i);
+      ).rejects.toThrow(/timeline_events_.*_key|duplicate key value/i);
     } finally {
       await appClient.end();
     }
