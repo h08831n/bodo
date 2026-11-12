@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,14 +23,22 @@ async function runMigrate() {
     DATABASE_URL: migratorUrl,
   };
 
+  let prismaCli = path.resolve(projectRoot, 'apps/api/node_modules/prisma/build/index.js');
+  if (!fs.existsSync(prismaCli)) {
+    prismaCli = path.resolve(projectRoot, 'node_modules/prisma/build/index.js');
+  }
+
   const schemaPath = path.resolve(projectRoot, 'apps/api/prisma/schema.prisma');
-  const cmd = `pnpm --filter @bodo/api exec prisma migrate deploy --schema="${schemaPath}"`;
-  const res = spawnSync(cmd, {
-    cwd: projectRoot,
-    env,
-    stdio: 'inherit',
-    shell: true,
-  });
+  const res = spawnSync(
+    process.execPath,
+    [prismaCli, 'migrate', 'deploy', `--schema=${schemaPath}`],
+    {
+      cwd: projectRoot,
+      env,
+      stdio: 'inherit',
+      shell: false,
+    },
+  );
 
   if (res.status !== 0) {
     const errMsg = `Prisma migrate deploy exited with code ${res.status}`;

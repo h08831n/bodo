@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,14 +24,22 @@ async function runSeed() {
     SEED_DATABASE_URL: appUrl,
   };
 
+  let tsxCli = path.resolve(projectRoot, 'apps/api/node_modules/tsx/dist/cli.mjs');
+  if (!fs.existsSync(tsxCli)) {
+    tsxCli = path.resolve(projectRoot, 'node_modules/tsx/dist/cli.mjs');
+  }
+
   const seedScript = path.resolve(projectRoot, 'apps/api/prisma/seed.ts');
-  const cmd = `pnpm --filter @bodo/api exec tsx "${seedScript}"`;
-  const res = spawnSync(cmd, {
-    cwd: projectRoot,
-    env,
-    stdio: 'inherit',
-    shell: true,
-  });
+  const res = spawnSync(
+    process.execPath,
+    [tsxCli, seedScript],
+    {
+      cwd: projectRoot,
+      env,
+      stdio: 'inherit',
+      shell: false,
+    },
+  );
 
   if (res.status !== 0) {
     const errMsg = `Seed execution exited with code ${res.status}`;
