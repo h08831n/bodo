@@ -22,6 +22,7 @@ async function main() {
 main()
   .catch((e) => {
     console.error('[seed] ERROR:', e);
+    console.log(`::error title=SeedError::${String(e?.message || e).replace(/[\r\n]+/g, ' ')}`);
     process.exit(1);
   })
   .finally(async () => {

@@ -21,6 +21,7 @@ async function runStep(stepName, scriptPath, envOverrides = {}) {
   });
 
   if (res.status !== 0) {
+    console.log(`::error title=StepFailed::Step ${stepName} failed with exit code ${res.status}`);
     throw new Error(
       `Step "${stepName}" failed with exit code ${res.status}. Database setup aborted.`,
     );
