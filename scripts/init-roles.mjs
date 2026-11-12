@@ -82,6 +82,10 @@ async function initRoles() {
     await client.query(`GRANT erp_migrator TO erp_provisioner;`);
     console.log('  ✓ Granted role erp_migrator to erp_provisioner (PG15+ ownership delegation)');
 
+    // 5. Allow erp_app to connect to postgres database for health check
+    await client.query(`GRANT CONNECT ON DATABASE postgres TO erp_app;`);
+    console.log('  ✓ Granted CONNECT on database postgres to erp_app (Health check)');
+
     console.log('[init-roles] SUCCESS: All roles successfully initialized.');
   } catch (err) {
     console.error('[init-roles] ERROR:');

@@ -26,3 +26,6 @@ $do$;
 -- erp_provisioner must be a member of erp_migrator in order to execute
 -- `CREATE DATABASE <name> OWNER erp_migrator`
 GRANT erp_migrator TO erp_provisioner;
+
+-- Allow erp_app to connect to maintenance/health database postgres
+GRANT CONNECT ON DATABASE postgres TO erp_app;

@@ -54,29 +54,42 @@ async function run() {
   }
 
   try {
-    const shadowFlag = shadowUrl ? `--shadow-database-url "${shadowUrl}"` : '';
+    let prismaCli = path.resolve(projectRoot, 'apps/api/node_modules/prisma/build/index.js');
+    if (!fs.existsSync(prismaCli)) {
+      prismaCli = path.resolve(projectRoot, 'node_modules/prisma/build/index.js');
+    }
+
     const schemaPath = path.resolve(projectRoot, 'apps/api/prisma/schema.prisma');
     const migrationsPath = path.resolve(projectRoot, 'apps/api/prisma/migrations');
 
-    const cmd = `pnpm --filter @bodo/api exec prisma migrate diff --from-migrations "${migrationsPath}" --to-schema-datamodel "${schemaPath}" ${shadowFlag} --script`;
+    const prismaArgs = [
+      prismaCli,
+      'migrate',
+      'diff',
+      `--from-migrations=${migrationsPath}`,
+      `--to-schema-datamodel=${schemaPath}`,
+      '--script',
+    ];
+    if (shadowUrl) {
+      prismaArgs.push(`--shadow-database-url=${shadowUrl}`);
+    }
 
     console.log('[INFO] Running prisma migrate diff...');
-    let rawOutput = '';
-    try {
-      rawOutput = execSync(cmd, {
-        cwd: projectRoot,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-        shell: process.platform === 'win32',
-      });
-    } catch (execErr) {
-      const stdout = execErr.stdout ? execErr.stdout.toString() : '';
-      const stderr = execErr.stderr ? execErr.stderr.toString() : '';
+    const res = spawnSync(process.execPath, prismaArgs, {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: false,
+    });
+
+    if (res.status !== 0) {
       console.error('[ERROR] Failed to execute prisma migrate diff:');
-      if (stderr) console.error(stderr);
-      if (stdout) console.error(stdout);
-      process.exit(1);
+      if (res.stderr) console.error(res.stderr);
+      if (res.stdout) console.error(res.stdout);
+      process.exit(res.status || 1);
     }
+
+    const rawOutput = res.stdout || '';
 
     const { isClean, unexpectedDiffs } = filterDrift(rawOutput);
 
