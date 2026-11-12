@@ -12,8 +12,10 @@ async function verifyDevDb() {
       delayMs: 1000,
     });
   } catch (err) {
+    const formatted = formatDbError(err, config.host, config.port);
     console.error('[db:verify-dev] Connection Failure:');
-    console.error(formatDbError(err, config.host, config.port));
+    console.error(formatted);
+    console.log(`::error title=VerifyConnError::${String(err.message || err).replace(/[\r\n]+/g, ' ')}`);
     process.exit(1);
   }
 
@@ -42,6 +44,7 @@ async function verifyDevDb() {
     console.log(`\n[db:verify-dev] SUCCESS: Database "${config.targetDb}" verified with 4 currencies and 7 lost reasons!`);
   } catch (err) {
     console.error('[db:verify-dev] ERROR:', err.message);
+    console.log(`::error title=VerifyQueryError::${String(err.message || err).replace(/[\r\n]+/g, ' ')}`);
     process.exit(1);
   } finally {
     client.release();
@@ -51,5 +54,6 @@ async function verifyDevDb() {
 
 verifyDevDb().catch((err) => {
   console.error('[db:verify-dev] FATAL ERROR:', err);
+  console.log(`::error title=VerifyFatalError::${String(err.message || err).replace(/[\r\n]+/g, ' ')}`);
   process.exit(1);
 });
