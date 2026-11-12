@@ -20,6 +20,7 @@ async function runSeed() {
   const env = {
     ...process.env,
     DATABASE_URL: appUrl,
+    SEED_DATABASE_URL: appUrl,
   };
 
   const seedScript = path.resolve(projectRoot, 'apps/api/prisma/seed.ts');
