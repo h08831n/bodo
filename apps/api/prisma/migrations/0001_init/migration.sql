@@ -278,7 +278,7 @@ CREATE TABLE "timeline_events" (
     "source_event_id" UUID,
 
     CONSTRAINT "timeline_events_pkey" PRIMARY KEY ("id", "occurred_at"),
-    CONSTRAINT "timeline_events_source_event_id_subject_type_subject_id_occurred_at_key" UNIQUE ("source_event_id", "subject_type", "subject_id", "occurred_at")
+    CONSTRAINT "timeline_events_source_event_id_subject_type_subject_id_occ_key" UNIQUE ("source_event_id", "subject_type", "subject_id", "occurred_at")
 ) PARTITION BY RANGE ("occurred_at");
 
 CREATE INDEX "timeline_events_subject_type_subject_id_occurred_at_idx" ON "timeline_events"("subject_type", "subject_id", "occurred_at" DESC);

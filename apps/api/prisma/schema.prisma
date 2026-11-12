@@ -265,7 +265,7 @@ model TimelineEvent {
   @@id([id, occurredAt])
   @@index([subjectType, subjectId, occurredAt(sort: Desc)])
   @@index([refType, refId])
-  @@unique([sourceEventId, subjectType, subjectId, occurredAt])
+  @@unique([sourceEventId, subjectType, subjectId, occurredAt], map: "timeline_events_source_event_id_subject_type_subject_id_occ_key")
   @@map("timeline_events")
 }
 
