@@ -12,7 +12,12 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
+    "test:integration": "jest --config test/jest-integration.json --runInBand",
+    "postinstall": "prisma generate",
     "clean": "rimraf dist"
+  },
+  "prisma": {
+    "schema": "prisma/schema.prisma"
   },
   "dependencies": {
     "@bodo/contracts": "workspace:*",
@@ -20,6 +25,7 @@
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
+    "@prisma/client": "6.4.1",
     "dotenv": "^16.4.7",
     "helmet": "^8.0.0",
     "ioredis": "^5.4.2",
@@ -35,15 +41,19 @@
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
+    "@testcontainers/postgresql": "^12.2.1",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.10.7",
     "@types/pg": "^8.11.10",
     "@types/supertest": "^6.0.2",
     "jest": "^29.7.0",
+    "prisma": "6.4.1",
     "rimraf": "^6.0.1",
     "supertest": "^7.0.0",
+    "testcontainers": "^12.2.1",
     "ts-jest": "^29.2.5",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.2"
   }
 }

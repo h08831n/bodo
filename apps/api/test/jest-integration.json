@@ -1,0 +1,16 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "../",
+  "testRegex": "test/.*\\.spec\\.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "testEnvironment": "node",
+  "testTimeout": 180000,
+  "moduleNameMapper": {
+    "^@bodo/contracts$": "<rootDir>/../../packages/contracts/src/index.ts",
+    "^@bodo/contracts/(.*)$": "<rootDir>/../../packages/contracts/src/$1",
+    "^@bodo/utils$": "<rootDir>/../../packages/utils/src/index.ts",
+    "^@bodo/utils/(.*)$": "<rootDir>/../../packages/utils/src/$1"
+  }
+}
