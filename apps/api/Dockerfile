@@ -17,6 +17,7 @@ COPY packages/utils/package.json ./packages/utils/
 COPY packages/ui/package.json ./packages/ui/
 COPY apps/web/package.json ./apps/web/
 COPY apps/api/package.json ./apps/api/
+COPY apps/api/prisma ./apps/api/prisma/
 
 RUN pnpm install --frozen-lockfile
 

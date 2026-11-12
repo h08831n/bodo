@@ -123,9 +123,9 @@ erp/
 مراحل (job با گزارش پیشرفت):
 
 1. اعتبارسنجی نام و یکتایی
-2. `CREATE DATABASE erp_tmp_<id>` (با نقش `erp_provisioner`)
+2. `CREATE DATABASE erp_tmp_<id>` (با نقش `erp_provisioner` و `OWNER erp_migrator`)
 3. اجرای همه‌ی مایگریشن‌ها (`prisma migrate deploy` با `DATABASE_URL` همان دیتابیس)
-4. seed: ارزها (IRR، IRT، USD، EUR)، `company_profile` خالی با ارز پیش‌فرض IRR، گروه «مدیر سیستم» (همه‌ی مجوزها، دسترسی ALL)، کاربر مدیر، شماره‌گذاری‌های پایه، چند دلیل باخت نمونه
+4. seed: داده‌های پایه شامل ارزها (IRR، IRT، USD، EUR)، `company_profile` خالی با ارز پیش‌فرض IRR، گروه «مدیر سیستم» (همه‌ی مجوزها، دسترسی ALL)، چند دلیل باخت نمونه و تنظیم `neutralized=false` (شماره‌گذاری‌ها در هر ماژول طبق S1.9 و کاربر مدیر اولیه در انتهای همین Job توسط Provisioning ساخته می‌شوند)
 5. ساخت پوشه‌ی filestore
 6. `ALTER DATABASE erp_tmp_<id> RENAME TO erp_<slug>`
 7. پاک‌کردن کش و اعلام آماده
@@ -147,11 +147,11 @@ erp/
 
 ### ۲.۶ نقش‌های دیتابیس
 
-| نقش               | دسترسی                                                        |
-| ----------------- | ------------------------------------------------------------- |
-| `erp_provisioner` | `CREATEDB` (ساخت، حذف و تغییر نام دیتابیس‌ها)                 |
-| `erp_migrator`    | owner جدول‌ها؛ فقط برای مایگریشن                              |
-| `erp_app`         | فقط DML (select/insert/update/delete) و استفاده از sequenceها |
+| نقش               | دسترسی                                                                                                                                                                                |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `erp_provisioner` | `CREATEDB` و عضویت در `erp_migrator` (ساخت دیتابیس با `OWNER erp_migrator`، حذف و تغییر نام دیتابیس‌ها)                                                                               |
+| `erp_migrator`    | owner جدول‌ها؛ فقط برای مایگریشن                                                                                                                                                      |
+| `erp_app`         | فقط DML روی جدول‌های عادی؛ روی `audit_logs` فقط `INSERT` و `SELECT` (فقط‌افزودنی/append-only)؛ اجرای تابع کمکی `ensure_monthly_partitions` و استفاده از sequenceها (بدون مجوزهای DDL) |
 
 ### ۲.۷ ورود و تشخیص دیتابیس
 
@@ -176,6 +176,8 @@ erp/
 ### ۳.۳ پارتیشن‌بندی
 
 `audit_logs` و `timeline_events` پارتیشن ماهانه بر اساس `occurred_at`. Prisma پارتیشن را نمی‌شناسد: جدول مادر و پارتیشن‌ها در مایگریشن SQL دستی ساخته می‌شوند و مدل Prisma به جدول مادر نگاشت می‌شود. Job ماهانه پارتیشن ۳ ماه آینده را در هر دیتابیس می‌سازد. چون ایندکس یکتا روی جدول پارتیشن‌دار باید کلید پارتیشن را شامل شود، `occurred_at` در `timeline_events` از **خود رویداد دامنه‌ای** گرفته می‌شود (نه `now()`) تا یکتایی idempotency واقعی باشد.
+قرارداد نام‌گذاری پارتیشن‌ها: `<table_name>_p<YYYYMM>` (مثلاً `audit_logs_p202611`) و `<table_name>_default`.
+تابع امنیتی کمکی `ensure_monthly_partitions(target_table text, months_ahead int)` با دسترسی `SECURITY DEFINER` و مالکیت `erp_migrator` ایجاد شده است تا ساخت پارتیشن‌های آینده توسط `erp_app` بدون نیاز به مجوز DDL انجام پذیرد.
 
 ### ۳.۴ Pagination
 
@@ -246,7 +248,7 @@ model CompanyProfile {
   postalCode          String?  @map("postal_code")
   logoFileId          String?  @map("logo_file_id") @db.Uuid
   defaultCurrencyCode String   @default("IRR") @map("default_currency_code")
-  updatedAt           DateTime @updatedAt @map("updated_at")
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
   updatedById         String?  @map("updated_by_id") @db.Uuid
 
   defaultCurrency Currency @relation(fields: [defaultCurrencyCode], references: [code])
@@ -272,7 +274,7 @@ model Currency {
 model SystemSetting {
   key       String   @id
   value     Json
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("system_settings")
 }
@@ -282,23 +284,23 @@ model SystemSetting {
 model User {
   id                 String     @id @db.Uuid
   type               UserType   @default(INTERNAL)
-  username           String     @unique
-  passwordHash       String     @map("password_hash")        // argon2id
+  username           String     @unique // قید DB: CHECK (username = lower(username))
+  passwordHash       String     @map("password_hash") // argon2id
   fullName           String     @map("full_name")
-  mobile             String?    @unique                       // نرمال‌شده +98...
+  mobile             String?    @unique // نرمال‌شده +98...
   email              String?    @unique
   avatarFileId       String?    @map("avatar_file_id") @db.Uuid
   status             UserStatus @default(ACTIVE)
   mustChangePassword Boolean    @default(false) @map("must_change_password")
   failedLoginCount   Int        @default(0) @map("failed_login_count")
-  lockedUntil        DateTime?  @map("locked_until")
-  lastLoginAt        DateTime?  @map("last_login_at")
-  passwordChangedAt  DateTime?  @map("password_changed_at")
+  lockedUntil        DateTime?  @map("locked_until") @db.Timestamptz(3)
+  lastLoginAt        DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  passwordChangedAt  DateTime?  @map("password_changed_at") @db.Timestamptz(3)
   // کاربر پورتال به مخاطب وصل می‌شود؛ FK در مرحله‌ی مخاطبین اضافه می‌شود
   portalContactId    String?    @map("portal_contact_id") @db.Uuid
-  createdAt          DateTime   @default(now()) @map("created_at")
-  updatedAt          DateTime   @updatedAt @map("updated_at")
-  deletedAt          DateTime?  @map("deleted_at")
+  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt          DateTime?  @map("deleted_at") @db.Timestamptz(3)
 
   groupMembers GroupMember[]
   teamMembers  TeamMember[]
@@ -315,10 +317,10 @@ model Session {
   familyId         String    @map("family_id") @db.Uuid
   userAgent        String?   @map("user_agent")
   ip               String?
-  createdAt        DateTime  @default(now()) @map("created_at")
-  lastUsedAt       DateTime  @default(now()) @map("last_used_at")
-  expiresAt        DateTime  @map("expires_at")
-  revokedAt        DateTime? @map("revoked_at")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastUsedAt       DateTime  @default(now()) @map("last_used_at") @db.Timestamptz(3)
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(3)
 
   user User @relation(fields: [userId], references: [id])
 
@@ -334,9 +336,9 @@ model Group {
   name        String   @unique
   description String?
   isSystem    Boolean  @default(false) @map("is_system")
-  createdAt   DateTime @default(now()) @map("created_at")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   createdById String?  @map("created_by_id") @db.Uuid
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
   updatedById String?  @map("updated_by_id") @db.Uuid
 
   members     GroupMember[]
@@ -373,8 +375,8 @@ model Team {
   name      String   @unique
   leaderId  String?  @map("leader_id") @db.Uuid
   isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   members TeamMember[]
 
@@ -404,8 +406,8 @@ model RecordRule {
   scope        RuleScope @default(OWN)
   ownerField   String    @default("ownerId") @map("owner_field")
   customFilter Json?     @map("custom_filter")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
@@ -417,7 +419,7 @@ model RecordRule {
 
 model AuditLog {
   id         String      @db.Uuid
-  occurredAt DateTime    @default(now()) @map("occurred_at")
+  occurredAt DateTime    @default(now()) @map("occurred_at") @db.Timestamptz(3)
   actorId    String?     @map("actor_id") @db.Uuid
   source     EventSource @default(UI)
   action     String
@@ -435,7 +437,7 @@ model AuditLog {
 
 model TimelineEvent {
   id            String      @db.Uuid
-  occurredAt    DateTime    @map("occurred_at")           // از رویداد دامنه‌ای، نه now()
+  occurredAt    DateTime    @map("occurred_at") @db.Timestamptz(3) // از رویداد دامنه‌ای، نه now()
   subjectType   String      @map("subject_type")
   subjectId     String      @map("subject_id") @db.Uuid
   eventType     String      @map("event_type")
@@ -460,8 +462,8 @@ model OutboxEvent {
   id          String    @id @db.Uuid
   type        String
   payload     Json
-  createdAt   DateTime  @default(now()) @map("created_at")
-  processedAt DateTime? @map("processed_at")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  processedAt DateTime? @map("processed_at") @db.Timestamptz(3)
   attempts    Int       @default(0)
   lastError   String?   @map("last_error")
 
@@ -479,7 +481,7 @@ model Sequence {
   nextValue    BigInt   @default(1) @map("next_value")
   resetPolicy  String   @default("YEARLY") @map("reset_policy")   // NEVER | YEARLY
   lastResetKey String?  @map("last_reset_key")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("sequences")
 }
@@ -492,9 +494,9 @@ model LostReason {
   appliesTo   LostAppliesTo @default(BOTH) @map("applies_to")
   sortOrder   Int           @default(0) @map("sort_order")
   isActive    Boolean       @default(true) @map("is_active")
-  createdAt   DateTime      @default(now()) @map("created_at")
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   createdById String?       @map("created_by_id") @db.Uuid
-  updatedAt   DateTime      @updatedAt @map("updated_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
   updatedById String?       @map("updated_by_id") @db.Uuid
 
   @@map("lost_reasons")
@@ -505,11 +507,15 @@ model LostReason {
 
 مایگریشن اول (`0001_init`) شامل موارد زیر است که Prisma تولید نمی‌کند:
 
-1. `CREATE EXTENSION pg_trgm; CREATE EXTENSION unaccent;`
-2. پارتیشن‌دارکردن `audit_logs` و `timeline_events` (`PARTITION BY RANGE (occurred_at)`) + پارتیشن‌های ۳ ماه اول + پارتیشن `DEFAULT`
-3. `CHECK (id = 1)` روی `company_profile`
-4. `GRANT`های نقش `erp_app` (فقط DML) و تنظیم owner به `erp_migrator`
-5. قیدهای `CHECK` (مثلاً `decimals >= 0`)
+1. `CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE EXTENSION IF NOT EXISTS unaccent;`
+2. پارتیشن‌دارکردن `audit_logs` و `timeline_events` (`PARTITION BY RANGE (occurred_at)`) با نام‌های `_p<YYYYMM>` برای ۳ ماه اول + پارتیشن `DEFAULT`
+3. تابع کمکی امنیتی `ensure_monthly_partitions(target_table text, months_ahead int)` با `SECURITY DEFINER` و مالکیت `erp_migrator` و اعطای `EXECUTE` به `erp_app`
+4. قید `CHECK (id = 1)` روی `company_profile`
+5. قید `CHECK (username = lower(username))` روی `users`
+6. `GRANT`های نقش `erp_app` (DML روی جدول‌های عادی؛ روی `audit_logs` فقط `INSERT` و `SELECT` به عنوان append-only؛ فاقد هرگونه دسترسی DDL) و تنظیم owner به `erp_migrator`
+7. قیدهای `CHECK` (مثلاً `decimals >= 0` روی `currencies` و `failed_login_count >= 0` روی `users`)
+
+نقش‌های دیتابیس یک‌بار در `infra/postgres/init.sql` ساخته می‌شوند، نه در مایگریشن هر دیتابیس.
 
 نقش‌های دیتابیس یک‌بار در `infra/postgres/init.sql` ساخته می‌شوند، نه در مایگریشن هر دیتابیس.
 

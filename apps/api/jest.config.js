@@ -10,6 +10,7 @@ module.exports = {
   coverageDirectory: '../coverage',
   testEnvironment: 'node',
   moduleNameMapper: {
+    '^(\\.{1,2}/.*)\\.js$': '$1',
     '^@bodo/contracts$': '<rootDir>/../../../packages/contracts/src/index.ts',
     '^@bodo/contracts/(.*)$': '<rootDir>/../../../packages/contracts/src/$1',
     '^@bodo/utils$': '<rootDir>/../../../packages/utils/src/index.ts',

@@ -1,5 +1,6 @@
 -- bodo ERP: Database Roles Initialization
 -- Created once when the PostgreSQL cluster is initialized
+-- Compatible with PostgreSQL 16+ isolation architecture
 
 DO
 $do$
@@ -20,3 +21,8 @@ BEGIN
    END IF;
 END
 $do$;
+
+-- PostgreSQL 15+ ownership requirement:
+-- erp_provisioner must be a member of erp_migrator in order to execute
+-- `CREATE DATABASE <name> OWNER erp_migrator`
+GRANT erp_migrator TO erp_provisioner;

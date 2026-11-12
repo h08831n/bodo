@@ -1,0 +1,314 @@
+// ========================================================
+// bodo ERP - Database Schema (Single Company Database)
+// Step S1.2: Base schema with strict UTC timestamps and UUIDv7
+// ========================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────── Enums ─────────────
+
+enum UserType {
+  INTERNAL
+  PORTAL
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+  LOCKED
+}
+
+enum RuleScope {
+  OWN
+  TEAM
+  ALL
+  CUSTOM
+}
+
+enum EventSource {
+  UI
+  API
+  IMPORT
+  SYSTEM
+}
+
+enum LostAppliesTo {
+  LEAD
+  QUOTATION
+  BOTH
+}
+
+// ───────────── Company Profile ─────────────
+
+// Exactly one row (id = 1, enforced by DB CHECK). Initially empty, configured in settings.
+model CompanyProfile {
+  id                  Int      @id @default(1)
+  name                String   @default("")
+  legalName           String?  @map("legal_name")
+  nationalId          String?  @map("national_id")
+  registrationNo      String?  @map("registration_no")
+  economicCode        String?  @map("economic_code")
+  phone               String?
+  email               String?
+  website             String?
+  address             String?
+  postalCode          String?  @map("postal_code")
+  logoFileId          String?  @map("logo_file_id") @db.Uuid
+  defaultCurrencyCode String   @default("IRR") @map("default_currency_code")
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedById         String?  @map("updated_by_id") @db.Uuid
+
+  defaultCurrency Currency @relation(fields: [defaultCurrencyCode], references: [code])
+
+  @@map("company_profile")
+}
+
+// Currencies: No internal exchange rates are stored
+model Currency {
+  code      String  @id // IRR, IRT, USD, EUR
+  name      String
+  symbol    String
+  decimals  Int     @default(0)
+  isActive  Boolean @default(true) @map("is_active")
+  sortOrder Int     @default(0) @map("sort_order")
+
+  profiles CompanyProfile[]
+
+  @@map("currencies")
+}
+
+// Database-level key-value settings (e.g. neutralized)
+model SystemSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("system_settings")
+}
+
+// ───────────── Users & Sessions ─────────────
+
+model User {
+  id                 String     @id @db.Uuid
+  type               UserType   @default(INTERNAL)
+  username           String     @unique
+  passwordHash       String     @map("password_hash") // argon2id
+  fullName           String     @map("full_name")
+  mobile             String?    @unique // Normalized +98...
+  email              String?    @unique
+  avatarFileId       String?    @map("avatar_file_id") @db.Uuid
+  status             UserStatus @default(ACTIVE)
+  mustChangePassword Boolean    @default(false) @map("must_change_password")
+  failedLoginCount   Int        @default(0) @map("failed_login_count")
+  lockedUntil        DateTime?  @map("locked_until") @db.Timestamptz(3)
+  lastLoginAt        DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  passwordChangedAt  DateTime?  @map("password_changed_at") @db.Timestamptz(3)
+  portalContactId    String?    @map("portal_contact_id") @db.Uuid
+  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt          DateTime?  @map("deleted_at") @db.Timestamptz(3)
+
+  groupMembers GroupMember[]
+  teamMembers  TeamMember[]
+  sessions     Session[]
+
+  @@index([type, status])
+  @@map("users")
+}
+
+model Session {
+  id               String    @id @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  refreshTokenHash String    @unique @map("refresh_token_hash")
+  familyId         String    @map("family_id") @db.Uuid
+  userAgent        String?   @map("user_agent")
+  ip               String?
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastUsedAt       DateTime  @default(now()) @map("last_used_at") @db.Timestamptz(3)
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, revokedAt])
+  @@index([familyId])
+  @@map("sessions")
+}
+
+// ───────────── Groups, Teams, Permissions ─────────────
+
+model Group {
+  id          String   @id @db.Uuid
+  name        String   @unique
+  description String?
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdById String?  @map("created_by_id") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedById String?  @map("updated_by_id") @db.Uuid
+
+  members     GroupMember[]
+  permissions GroupPermission[]
+  recordRules RecordRule[]
+
+  @@map("groups")
+}
+
+model GroupMember {
+  groupId String @map("group_id") @db.Uuid
+  userId  String @map("user_id") @db.Uuid
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@id([groupId, userId])
+  @@map("group_members")
+}
+
+model GroupPermission {
+  groupId        String @map("group_id") @db.Uuid
+  permissionCode String @map("permission_code")
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, permissionCode])
+  @@map("group_permissions")
+}
+
+model Team {
+  id        String   @id @db.Uuid
+  name      String   @unique
+  leaderId  String?  @map("leader_id") @db.Uuid
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  members TeamMember[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  teamId String @map("team_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@id([teamId, userId])
+  @@map("team_members")
+}
+
+model RecordRule {
+  id           String    @id @db.Uuid
+  groupId      String    @map("group_id") @db.Uuid
+  resource     String
+  canRead      Boolean   @default(true) @map("can_read")
+  canWrite     Boolean   @default(true) @map("can_write")
+  canCreate    Boolean   @default(true) @map("can_create")
+  canDelete    Boolean   @default(false) @map("can_delete")
+  scope        RuleScope @default(OWN)
+  ownerField   String    @default("ownerId") @map("owner_field")
+  customFilter Json?     @map("custom_filter")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, resource])
+  @@map("record_rules")
+}
+
+// ───────────── Audit & Timeline (Partitioned) ─────────────
+
+model AuditLog {
+  id         String      @db.Uuid
+  occurredAt DateTime    @default(now()) @map("occurred_at") @db.Timestamptz(3)
+  actorId    String?     @map("actor_id") @db.Uuid
+  source     EventSource @default(UI)
+  action     String
+  entityType String      @map("entity_type")
+  entityId   String?     @map("entity_id") @db.Uuid
+  changes    Json?
+  meta       Json?
+  requestId  String?     @map("request_id")
+
+  @@id([id, occurredAt])
+  @@index([entityType, entityId, occurredAt(sort: Desc)])
+  @@index([actorId, occurredAt(sort: Desc)])
+  @@map("audit_logs")
+}
+
+model TimelineEvent {
+  id            String      @db.Uuid
+  occurredAt    DateTime    @map("occurred_at") @db.Timestamptz(3)
+  subjectType   String      @map("subject_type")
+  subjectId     String      @map("subject_id") @db.Uuid
+  eventType     String      @map("event_type")
+  actorId       String?     @map("actor_id") @db.Uuid
+  source        EventSource @default(SYSTEM)
+  refType       String?     @map("ref_type")
+  refId         String?     @map("ref_id") @db.Uuid
+  title         String
+  summary       String?
+  role          String?
+  meta          Json?
+  sourceEventId String?     @map("source_event_id") @db.Uuid
+
+  @@id([id, occurredAt])
+  @@index([subjectType, subjectId, occurredAt(sort: Desc)])
+  @@index([refType, refId])
+  @@unique([sourceEventId, subjectType, subjectId, occurredAt], map: "timeline_events_source_event_id_subject_type_subject_id_occ_key")
+  @@map("timeline_events")
+}
+
+model OutboxEvent {
+  id          String    @id @db.Uuid
+  type        String
+  payload     Json
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  processedAt DateTime? @map("processed_at") @db.Timestamptz(3)
+  attempts    Int       @default(0)
+  lastError   String?   @map("last_error")
+
+  @@index([processedAt, createdAt])
+  @@map("outbox_events")
+}
+
+// ───────────── Sequences ─────────────
+
+model Sequence {
+  id           String   @id @db.Uuid
+  code         String   @unique
+  prefix       String   @default("")
+  pattern      String   @default("{prefix}{yyyy}-{seq:5}")
+  nextValue    BigInt   @default(1) @map("next_value")
+  resetPolicy  String   @default("YEARLY") @map("reset_policy")
+  lastResetKey String?  @map("last_reset_key")
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("sequences")
+}
+
+// ───────────── Settings: Lost Reasons ─────────────
+
+model LostReason {
+  id          String        @id @db.Uuid
+  name        String        @unique
+  appliesTo   LostAppliesTo @default(BOTH) @map("applies_to")
+  sortOrder   Int           @default(0) @map("sort_order")
+  isActive    Boolean       @default(true) @map("is_active")
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdById String?       @map("created_by_id") @db.Uuid
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedById String?       @map("updated_by_id") @db.Uuid
+
+  @@map("lost_reasons")
+}
