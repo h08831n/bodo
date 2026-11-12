@@ -45,6 +45,28 @@ export const EnvSchema = z.object({
   PG_BIN_PATH: z.string().optional().default(''),
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 chars'),
   ENCRYPTION_KEY: z.string().min(32, 'ENCRYPTION_KEY must be at least 32 chars'),
+  POSTGRES_HOST: z.string().default('127.0.0.1'),
+  POSTGRES_PORT: z
+    .string()
+    .transform((val) => parseInt(val, 10))
+    .default('5433'),
+  ERP_APP_PASSWORD: z.string().default('app_secret_change_in_prod'),
+  ERP_MIGRATOR_PASSWORD: z.string().default('migrator_secret_change_in_prod'),
+  ERP_PROVISIONER_PASSWORD: z.string().default('provisioner_secret_change_in_prod'),
+  TENANT_MAX_CLIENTS: z
+    .string()
+    .transform((val) => parseInt(val, 10))
+    .default('20'),
+  TENANT_POOL_SIZE: z
+    .string()
+    .transform((val) => parseInt(val, 10))
+    .default('5'),
+  TENANT_IDLE_MS: z
+    .string()
+    .transform((val) => parseInt(val, 10))
+    .default('600000'),
+  CONFIG_DIR: z.string().default('./data/config'),
+  FILESTORE_DIR: z.string().default('./data/filestore'),
 });
 
 export type EnvConfig = z.infer<typeof EnvSchema>;

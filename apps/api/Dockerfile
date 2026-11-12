@@ -4,7 +4,7 @@ WORKDIR /app
 # NODE_OPTIONS is strictly limited to build stages to resolve IPv4 precedence during dependency download
 ENV NODE_OPTIONS="--dns-result-order=ipv4first"
 
-RUN corepack enable && corepack prepare pnpm@12.18.0 --activate
+RUN npm install -g pnpm@12.18.0
 
 # Stage 2: Builder
 FROM base AS builder

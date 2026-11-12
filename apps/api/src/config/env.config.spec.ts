@@ -33,6 +33,11 @@ describe('Environment Configuration Validation', () => {
     expect(config.NODE_ENV).toBe('development');
     expect(config.DB_MANAGER_ENABLED).toBe(true);
     expect(config.DATABASE_URL).toBe('postgresql://postgres:postgres@localhost:5432/postgres');
+    expect(config.TENANT_MAX_CLIENTS).toBe(20);
+    expect(config.TENANT_POOL_SIZE).toBe(5);
+    expect(config.TENANT_IDLE_MS).toBe(600000);
+    expect(config.CONFIG_DIR).toBe('./data/config');
+    expect(config.FILESTORE_DIR).toBe('./data/filestore');
   });
 
   it('fails with a readable error when DATABASE_URL is missing', () => {

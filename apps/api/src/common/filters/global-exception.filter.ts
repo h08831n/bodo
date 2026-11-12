@@ -2,6 +2,11 @@ import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus } from
 import { Request, Response } from 'express';
 import { ApiErrorResponse, ErrorCode } from '@bodo/contracts';
 import { LoggerService } from '../logger/logger.service';
+import {
+  DatabaseRequiredError,
+  DatabaseNotFoundError,
+  DatabaseMaintenanceError,
+} from '../../infra/tenancy/errors';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -18,7 +23,20 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let message = 'خطای داخلی سرور رخ داده است. لطفاً بعداً دوباره تلاش کنید.';
     let details: Array<{ path?: string; message: string }> | undefined;
 
-    if (exception instanceof HttpException) {
+    if (exception instanceof DatabaseRequiredError) {
+      status = HttpStatus.BAD_REQUEST;
+      code = 'DATABASE_REQUIRED';
+      message = exception.message || 'شناسه یا نام دیتابیس شرکت در درخواست الزامی است.';
+    } else if (exception instanceof DatabaseNotFoundError) {
+      status = HttpStatus.NOT_FOUND;
+      code = 'DATABASE_NOT_FOUND';
+      message = exception.message || 'دیتابیس شرکت یافت نشد یا معتبر نیست.';
+    } else if (exception instanceof DatabaseMaintenanceError) {
+      status = HttpStatus.SERVICE_UNAVAILABLE;
+      code = 'DATABASE_MAINTENANCE';
+      message = exception.message || 'دیتابیس شرکت در حال حاضر در حالت تعمیرات است.';
+      response.setHeader('Retry-After', String(exception.retryAfterSeconds || 60));
+    } else if (exception instanceof HttpException) {
       status = exception.getStatus();
       const res = exception.getResponse();
 
