@@ -247,24 +247,7 @@ jobs:
           }
 
       - name: Verify erp_dev contents (4 currencies, 7 lost reasons)
-        run: |
-          set -x
-          docker exec bodo-postgres-dev psql -U postgres -d erp_dev -c "SELECT code, decimals FROM currencies;"
-          CURR_COUNT=$(docker exec bodo-postgres-dev psql -U postgres -d erp_dev -t -A -c "SELECT COUNT(*) FROM currencies;" | tr -d '\r' | tr -d ' ')
-          echo "Currency count is: [$CURR_COUNT]"
-          if [ "$CURR_COUNT" -ne 4 ]; then
-            echo "Expected 4 currencies, found $CURR_COUNT"
-            exit 1
-          fi
-
-          docker exec bodo-postgres-dev psql -U postgres -d erp_dev -c "SELECT name, applies_to FROM lost_reasons;"
-          REASONS_COUNT=$(docker exec bodo-postgres-dev psql -U postgres -d erp_dev -t -A -c "SELECT COUNT(*) FROM lost_reasons;" | tr -d '\r' | tr -d ' ')
-          echo "Lost reasons count is: [$REASONS_COUNT]"
-          if [ "$REASONS_COUNT" -ne 7 ]; then
-            echo "Expected 7 lost reasons, found $REASONS_COUNT"
-            exit 1
-          fi
-          echo "SUCCESS: erp_dev verified with 4 currencies and 7 lost reasons."
+        run: pnpm db:verify-dev
 
       - name: Stop dev containers
         if: always()

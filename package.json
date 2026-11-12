@@ -20,6 +20,7 @@
     "db:migrate": "node scripts/migrate.mjs",
     "db:seed": "node scripts/seed.mjs",
     "db:setup-dev": "node scripts/setup-dev-db.mjs",
+    "db:verify-dev": "node scripts/verify-dev-db.mjs",
     "db:reset-dev": "node scripts/reset-dev-db.mjs",
     "db:check-drift": "node scripts/check-drift.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
