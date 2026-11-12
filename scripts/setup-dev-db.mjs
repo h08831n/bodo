@@ -17,7 +17,7 @@ async function runStep(stepName, scriptPath, envOverrides = {}) {
     cwd: projectRoot,
     env: { ...process.env, ...envOverrides },
     stdio: 'inherit',
-    shell: process.platform === 'win32',
+    shell: true,
   });
 
   if (res.status !== 0) {

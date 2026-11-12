@@ -30,7 +30,7 @@ async function runMigrate() {
       cwd: projectRoot,
       env,
       stdio: 'inherit',
-      shell: process.platform === 'win32',
+      shell: true,
     },
   );
 

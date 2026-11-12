@@ -218,18 +218,30 @@ jobs:
       - name: Start PostgreSQL via docker-compose.dev.yml
         run: |
           docker compose --env-file .env -f infra/docker-compose.dev.yml up -d postgres
+          HEALTHY=false
           for i in {1..30}; do
             STATUS=$(docker inspect --format='{{.State.Health.Status}}' bodo-postgres-dev 2>/dev/null || true)
             if [ "$STATUS" = "healthy" ]; then
               echo "PostgreSQL dev container is healthy!"
+              HEALTHY=true
               break
             fi
-            echo "Waiting for postgres health status (attempt $i/30)..."
+            echo "Waiting for postgres health status (attempt $i/30, current: $STATUS)..."
             sleep 2
           done
+          if [ "$HEALTHY" != "true" ]; then
+            echo "ERROR: PostgreSQL container failed to become healthy."
+            docker logs bodo-postgres-dev
+            exit 1
+          fi
 
       - name: Run Developer Database Setup (pnpm db:setup-dev)
-        run: pnpm db:setup-dev
+        run: |
+          pnpm db:setup-dev || {
+            echo "=== pnpm db:setup-dev failed! Inspecting docker logs ==="
+            docker logs bodo-postgres-dev
+            exit 1
+          }
 
       - name: Verify erp_dev contents (4 currencies, 7 lost reasons)
         run: |

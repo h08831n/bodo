@@ -30,7 +30,7 @@ async function runSeed() {
       cwd: projectRoot,
       env,
       stdio: 'inherit',
-      shell: process.platform === 'win32',
+      shell: true,
     },
   );
 

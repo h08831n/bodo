@@ -101,7 +101,10 @@ export function getDbConfig(targetDbOverride) {
     }
   }
 
-  const host = process.env.POSTGRES_HOST || parsedFromUrl?.hostname || '127.0.0.1';
+  let host = process.env.POSTGRES_HOST || parsedFromUrl?.hostname || '127.0.0.1';
+  if (host === 'localhost') {
+    host = '127.0.0.1';
+  }
   const port = parseInt(
     process.env.POSTGRES_PORT || parsedFromUrl?.port || '5433',
     10,
