@@ -23,16 +23,13 @@ async function runSeed() {
   };
 
   const seedScript = path.resolve(projectRoot, 'apps/api/prisma/seed.ts');
-  const res = spawnSync(
-    'pnpm',
-    ['--filter', '@bodo/api', 'exec', 'tsx', seedScript],
-    {
-      cwd: projectRoot,
-      env,
-      stdio: 'inherit',
-      shell: true,
-    },
-  );
+  const cmd = `pnpm --filter @bodo/api exec tsx "${seedScript}"`;
+  const res = spawnSync(cmd, {
+    cwd: projectRoot,
+    env,
+    stdio: 'inherit',
+    shell: true,
+  });
 
   if (res.status !== 0) {
     const errMsg = `Seed execution exited with code ${res.status}`;

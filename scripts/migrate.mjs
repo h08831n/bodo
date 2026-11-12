@@ -23,16 +23,13 @@ async function runMigrate() {
   };
 
   const schemaPath = path.resolve(projectRoot, 'apps/api/prisma/schema.prisma');
-  const res = spawnSync(
-    'pnpm',
-    ['--filter', '@bodo/api', 'exec', 'prisma', 'migrate', 'deploy', `--schema=${schemaPath}`],
-    {
-      cwd: projectRoot,
-      env,
-      stdio: 'inherit',
-      shell: true,
-    },
-  );
+  const cmd = `pnpm --filter @bodo/api exec prisma migrate deploy --schema="${schemaPath}"`;
+  const res = spawnSync(cmd, {
+    cwd: projectRoot,
+    env,
+    stdio: 'inherit',
+    shell: true,
+  });
 
   if (res.status !== 0) {
     const errMsg = `Prisma migrate deploy exited with code ${res.status}`;

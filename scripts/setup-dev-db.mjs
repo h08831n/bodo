@@ -13,7 +13,7 @@ async function runStep(stepName, scriptPath, envOverrides = {}) {
   console.log(` [db:setup-dev] Step: ${stepName}`);
   console.log(`========================================================`);
 
-  const res = spawnSync('node', [scriptPath], {
+  const res = spawnSync(`node "${scriptPath}"`, {
     cwd: projectRoot,
     env: { ...process.env, ...envOverrides },
     stdio: 'inherit',
