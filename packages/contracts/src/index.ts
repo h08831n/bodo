@@ -8,6 +8,7 @@ export const ErrorCodeSchema = z.enum([
   'CONFLICT',
   'VERSION_CONFLICT',
   'RATE_LIMITED',
+  'DATABASE_REQUIRED',
   'DATABASE_MAINTENANCE',
   'DATABASE_NOT_FOUND',
   'INTERNAL',
@@ -43,6 +44,13 @@ export const HealthStatusSchema = z.object({
     .object({
       postgres: z.enum(['up', 'down']).optional(),
       redis: z.enum(['up', 'down']).optional(),
+    })
+    .optional(),
+  tenantClients: z
+    .object({
+      open: z.number(),
+      maxClients: z.number(),
+      activeLeases: z.number(),
     })
     .optional(),
 });

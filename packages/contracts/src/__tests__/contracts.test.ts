@@ -28,13 +28,34 @@ describe('Contracts Schema Validation', () => {
     expect(parsed.success).toBe(false);
   });
 
-  it('validates health response structure', () => {
+  it('validates tenancy-related error codes', () => {
+    for (const code of [
+      'DATABASE_REQUIRED',
+      'DATABASE_NOT_FOUND',
+      'DATABASE_MAINTENANCE',
+    ] as const) {
+      const parsed = ApiErrorResponseSchema.safeParse({
+        error: {
+          code,
+          message: 'خطای دیتابیس',
+        },
+      });
+      expect(parsed.success).toBe(true);
+    }
+  });
+
+  it('validates health response structure with tenantClients', () => {
     const health = {
       status: 'ok',
       timestamp: new Date().toISOString(),
       checks: {
         postgres: 'up',
         redis: 'up',
+      },
+      tenantClients: {
+        open: 2,
+        maxClients: 20,
+        activeLeases: 1,
       },
     };
 
