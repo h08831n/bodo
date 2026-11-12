@@ -97,6 +97,15 @@ goto wait_dev_db_loop
 
 :dev_containers_ready
 echo.
+echo [INFO] Ensuring development database is provisioned and seeded...
+cd /d "%PROJECT_ROOT%"
+call pnpm db:setup-dev
+if %errorlevel% neq 0 (
+    echo [ERROR] Development database setup failed.
+    pause
+    exit /b 1
+)
+echo.
 echo [INFO] Launching pnpm dev in a dedicated window ("bodo-dev-server")...
 
 if exist "%SCRIPT_DIR%launch-dev.ps1" (

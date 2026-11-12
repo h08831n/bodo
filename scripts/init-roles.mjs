@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-import pg from 'pg';
-import process from 'node:process';
+import { getDbConfig, connectWithRetry, formatDbError } from './db-env.mjs';
 
 /**
  * Cross-platform script to idempotently initialize database isolation roles
@@ -9,57 +8,27 @@ import process from 'node:process';
  * Connects using superuser credentials from environment variables.
  */
 
-const { Pool } = pg;
-
-// Read configuration from environment
-const superuserUrl =
-  process.env.DATABASE_URL ||
-  `postgresql://${process.env.POSTGRES_USER || 'postgres'}:${process.env.POSTGRES_PASSWORD || 'postgres'}@localhost:${process.env.POSTGRES_PORT || 5433}/postgres`;
-
-const provisionerPassword =
-  process.env.ERP_PROVISIONER_PASSWORD || 'provisioner_secret_change_in_prod';
-const migratorPassword = process.env.ERP_MIGRATOR_PASSWORD || 'migrator_secret_change_in_prod';
-const appPassword = process.env.ERP_APP_PASSWORD || 'app_secret_change_in_prod';
-
 function escapeSqlLiteral(str) {
   return "'" + String(str).replace(/'/g, "''") + "'";
 }
 
-async function connectSuperuserWithRetry() {
-  const rawUrl =
-    process.env.DATABASE_URL ||
-    `postgresql://${process.env.POSTGRES_USER || 'postgres'}:${process.env.POSTGRES_PASSWORD || 'postgres'}@localhost:${process.env.POSTGRES_PORT || 5433}/postgres`;
-
-  const candidates = [rawUrl];
-  if (rawUrl.includes('@localhost:')) {
-    candidates.push(rawUrl.replace('@localhost:', '@127.0.0.1:'));
-  } else if (rawUrl.includes('@127.0.0.1:')) {
-    candidates.push(rawUrl.replace('@127.0.0.1:', '@localhost:'));
-  }
-
-  let lastError;
-  for (let attempt = 1; attempt <= 20; attempt++) {
-    for (const url of candidates) {
-      try {
-        const pool = new Pool({
-          connectionString: url,
-          connectionTimeoutMillis: 3000,
-        });
-        const client = await pool.connect();
-        return { pool, client, url };
-      } catch (err) {
-        lastError = err;
-      }
-    }
-    console.log(`[init-roles] Waiting for PostgreSQL to accept connections (attempt ${attempt}/20)...`);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-  throw lastError;
-}
-
 async function initRoles() {
+  const config = getDbConfig();
   console.log('[init-roles] Connecting to PostgreSQL superuser database...');
-  const { pool, client, url } = await connectSuperuserWithRetry();
+
+  let conn;
+  try {
+    conn = await connectWithRetry(config.getSuperuserUrl('postgres'), {
+      maxAttempts: 15,
+      delayMs: 1000,
+    });
+  } catch (err) {
+    console.error('[init-roles] Connection Failure:');
+    console.error(formatDbError(err, config.host, config.port));
+    process.exit(1);
+  }
+
+  const { pool, client, url } = conn;
   console.log(`[init-roles] Connected via ${url.replace(/:[^:]+@/, ':****@')}`);
 
   try {
@@ -77,7 +46,7 @@ async function initRoles() {
       END $$;
     `);
     await client.query(
-      `ALTER ROLE erp_provisioner WITH LOGIN CREATEDB PASSWORD ${escapeSqlLiteral(provisionerPassword)};`,
+      `ALTER ROLE erp_provisioner WITH LOGIN CREATEDB PASSWORD ${escapeSqlLiteral(config.provisioner.password)};`,
     );
     console.log('  ✓ Role erp_provisioner verified (LOGIN CREATEDB)');
 
@@ -91,7 +60,7 @@ async function initRoles() {
       END $$;
     `);
     await client.query(
-      `ALTER ROLE erp_migrator WITH LOGIN PASSWORD ${escapeSqlLiteral(migratorPassword)};`,
+      `ALTER ROLE erp_migrator WITH LOGIN PASSWORD ${escapeSqlLiteral(config.migrator.password)};`,
     );
     console.log('  ✓ Role erp_migrator verified (LOGIN)');
 
@@ -104,21 +73,29 @@ async function initRoles() {
         END IF;
       END $$;
     `);
-    await client.query(`ALTER ROLE erp_app WITH LOGIN PASSWORD ${escapeSqlLiteral(appPassword)};`);
+    await client.query(
+      `ALTER ROLE erp_app WITH LOGIN PASSWORD ${escapeSqlLiteral(config.app.password)};`,
+    );
     console.log('  ✓ Role erp_app verified (LOGIN)');
 
-    // 4. PostgreSQL 15+ ownership grant: erp_provisioner must be a member of erp_migrator
+    // 4. PostgreSQL 15+ ownership delegation: erp_provisioner must be a member of erp_migrator
     await client.query(`GRANT erp_migrator TO erp_provisioner;`);
     console.log('  ✓ Granted role erp_migrator to erp_provisioner (PG15+ ownership delegation)');
 
     console.log('[init-roles] SUCCESS: All roles successfully initialized.');
+  } catch (err) {
+    console.error('[init-roles] ERROR:');
+    console.error(formatDbError(err, config.host, config.port));
+    process.exit(1);
   } finally {
     client.release();
-    await pool.end();
+    await pool.end().catch(() => {});
   }
 }
 
 initRoles().catch((err) => {
-  console.error('[init-roles] ERROR:', err.message);
+  const config = getDbConfig();
+  console.error('[init-roles] FATAL ERROR:');
+  console.error(formatDbError(err, config.host, config.port));
   process.exit(1);
 });

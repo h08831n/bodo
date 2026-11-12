@@ -1,24 +1,30 @@
 #!/usr/bin/env node
-import pg from 'pg';
-import process from 'node:process';
+import { getDbConfig, connectWithRetry, formatDbError } from './db-env.mjs';
 
 /**
- * Creates the local development company database (erp_dev) owned by erp_migrator.
+ * Creates the local development company database (e.g. erp_dev) owned by erp_migrator.
  * Idempotent: checks pg_database first.
  */
 
-const { Pool } = pg;
-const superuserUrl = process.env.DATABASE_URL || `postgresql://${process.env.POSTGRES_USER || 'postgres'}:${process.env.POSTGRES_PASSWORD || 'postgres'}@localhost:${process.env.POSTGRES_PORT || 5433}/postgres`;
-const targetDb = 'erp_dev';
-
 async function createDevDb() {
-  console.log(`[create-dev] Checking if database "${targetDb}" exists...`);
-  const pool = new Pool({
-    connectionString: superuserUrl,
-    connectionTimeoutMillis: 5000,
-  });
+  const config = getDbConfig();
+  const targetDb = config.targetDb;
 
-  const client = await pool.connect();
+  console.log(`[create-dev] Checking if database "${targetDb}" exists...`);
+
+  let conn;
+  try {
+    conn = await connectWithRetry(config.getSuperuserUrl('postgres'), {
+      maxAttempts: 15,
+      delayMs: 1000,
+    });
+  } catch (err) {
+    console.error('[create-dev] Connection Failure:');
+    console.error(formatDbError(err, config.host, config.port));
+    process.exit(1);
+  }
+
+  const { pool, client } = conn;
 
   try {
     const res = await client.query('SELECT 1 FROM pg_database WHERE datname = $1;', [targetDb]);
@@ -30,13 +36,19 @@ async function createDevDb() {
       await client.query(`CREATE DATABASE "${targetDb}" OWNER erp_migrator;`);
       console.log(`[create-dev] SUCCESS: Database "${targetDb}" created.`);
     }
+  } catch (err) {
+    console.error('[create-dev] ERROR:');
+    console.error(formatDbError(err, config.host, config.port));
+    process.exit(1);
   } finally {
     client.release();
-    await pool.end();
+    await pool.end().catch(() => {});
   }
 }
 
 createDevDb().catch((err) => {
-  console.error('[create-dev] ERROR:', err.message);
+  const config = getDbConfig();
+  console.error('[create-dev] FATAL ERROR:');
+  console.error(formatDbError(err, config.host, config.port));
   process.exit(1);
 });

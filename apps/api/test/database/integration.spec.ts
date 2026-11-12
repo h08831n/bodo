@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { Client } from 'pg';
 import { PrismaClient } from '@prisma/client';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
@@ -36,24 +37,65 @@ describe('PostgreSQL 16 Database Integration Tests (S1.2)', () => {
       host = parsed.hostname;
       port = parseInt(parsed.port || '5432', 10);
     } else {
+      // 1. Check if Docker CLI and daemon are responding
+      let dockerAvailable = false;
       try {
-        container = await new PostgreSqlContainer('postgres:16-alpine')
-          .withDatabase('postgres')
-          .withUsername('postgres')
-          .withPassword('postgres')
-          .withStartupTimeout(60000)
-          .start();
+        const res = spawnSync('docker', ['info'], {
+          stdio: 'ignore',
+          shell: process.platform === 'win32',
+        });
+        dockerAvailable = res.status === 0;
+      } catch {
+        dockerAvailable = false;
+      }
 
-        host = container.getHost();
-        port = container.getPort();
-        superuserUrl = `postgresql://postgres:postgres@${host}:${port}/postgres`;
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.warn(`[WARN] Docker / Testcontainers could not be started: ${message}`);
-        // If Docker is not available in local dev, allow falling back to local postgres port 5433 if reachable
-        host = 'localhost';
-        port = 5433;
-        superuserUrl = 'postgresql://postgres:postgres@localhost:5433/postgres';
+      if (dockerAvailable) {
+        try {
+          container = await new PostgreSqlContainer('postgres:16-alpine')
+            .withDatabase('postgres')
+            .withUsername('postgres')
+            .withPassword('postgres')
+            .withStartupTimeout(60000)
+            .start();
+
+          host = container.getHost();
+          port = container.getPort();
+          superuserUrl = `postgresql://postgres:postgres@${host}:${port}/postgres`;
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.warn(`[WARN] Testcontainers failed to start: ${message}`);
+        }
+      }
+
+      // 2. If Docker / container is not active, check if local PostgreSQL is reachable
+      if (!superuserUrl) {
+        let localReachable = false;
+        try {
+          const probe = new Client({
+            connectionString: 'postgresql://postgres:postgres@127.0.0.1:5433/postgres',
+            connectionTimeoutMillis: 2000,
+          });
+          await probe.connect();
+          await probe.end();
+          localReachable = true;
+        } catch {
+          localReachable = false;
+        }
+
+        if (localReachable) {
+          host = '127.0.0.1';
+          port = 5433;
+          superuserUrl = 'postgresql://postgres:postgres@127.0.0.1:5433/postgres';
+        } else {
+          throw new Error(
+            `\n========================================================================\n` +
+              `[ERROR] Cannot execute integration tests:\n` +
+              `Docker daemon is not running and no active PostgreSQL was detected at 127.0.0.1:5433.\n\n` +
+              `Please start Docker Desktop (e.g. run start.bat or dev-start.bat) or start dev containers with:\n` +
+              `  docker compose -f infra/docker-compose.dev.yml up -d\n` +
+              `========================================================================\n`,
+          );
+        }
       }
     }
 
@@ -166,6 +208,27 @@ describe('PostgreSQL 16 Database Integration Tests (S1.2)', () => {
           CREATE EXTENSION IF NOT EXISTS unaccent;
         `),
       ).resolves.not.toThrow();
+
+      // Verify that extensions are per-database objects (installed inside testDbName, not cluster-level)
+      const extInTestDb = await migratorClient.query(
+        `SELECT extname FROM pg_extension WHERE extname IN ('pg_trgm', 'unaccent') ORDER BY extname;`,
+      );
+      expect(extInTestDb.rows.map((r: { extname: string }) => r.extname)).toEqual([
+        'pg_trgm',
+        'unaccent',
+      ]);
+
+      // Query pg_extension in clean 'postgres' database to prove extensions are not global/cluster-level
+      const superClient = new Client({ connectionString: superuserUrl });
+      await superClient.connect();
+      try {
+        const extInCleanDb = await superClient.query(
+          `SELECT extname FROM pg_extension WHERE extname IN ('pg_trgm', 'unaccent');`,
+        );
+        expect(extInCleanDb.rows.length).toBe(0);
+      } finally {
+        await superClient.end();
+      }
     } finally {
       await migratorClient.end();
     }
@@ -489,8 +552,40 @@ describe('PostgreSQL 16 Database Integration Tests (S1.2)', () => {
       const valB = await clientB.systemSetting.findUnique({ where: { key: 'tenant_name' } });
       expect(valB?.value).toBe('Company Beta');
 
+      // Verify both tenant pools have active connections in pg_stat_activity
+      const connsA = await superClient.query(
+        `SELECT COUNT(*)::int as count FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid();`,
+        [tenantDbA],
+      );
+      const connsB = await superClient.query(
+        `SELECT COUNT(*)::int as count FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid();`,
+        [tenantDbB],
+      );
+      expect(connsA.rows[0].count).toBeGreaterThan(0);
+      expect(connsB.rows[0].count).toBeGreaterThan(0);
+
       // Pool lifecycle proof: Disconnect client A
       await clientA.$disconnect();
+
+      // Poll until connections to tenantDbA drop to 0
+      let connsAfterA = -1;
+      for (let i = 0; i < 30; i++) {
+        const check = await superClient.query(
+          `SELECT COUNT(*)::int as count FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid();`,
+          [tenantDbA],
+        );
+        connsAfterA = check.rows[0].count;
+        if (connsAfterA === 0) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(connsAfterA).toBe(0);
+
+      // Verify tenant B connections remained untouched
+      const connsAfterB = await superClient.query(
+        `SELECT COUNT(*)::int as count FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid();`,
+        [tenantDbB],
+      );
+      expect(connsAfterB.rows[0].count).toBeGreaterThan(0);
 
       // Client B MUST remain fully functional after Client A is disconnected
       const valBAfterDisconnectA = await clientB.systemSetting.findUnique({

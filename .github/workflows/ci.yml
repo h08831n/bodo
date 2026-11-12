@@ -180,3 +180,74 @@ jobs:
         run: pnpm test:integration
         env:
           TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
+
+  dev-setup-verification:
+    name: Verify Developer Setup Flow (docker-compose.dev & db:setup-dev)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable Corepack & Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.18.0 --activate
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-store-
+
+      - name: Copy .env strictly from .env.example
+        run: cp .env.example .env
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Start PostgreSQL via docker-compose.dev.yml
+        run: |
+          docker compose --env-file .env -f infra/docker-compose.dev.yml up -d postgres
+          for i in {1..30}; do
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' bodo-postgres-dev 2>/dev/null || true)
+            if [ "$STATUS" = "healthy" ]; then
+              echo "PostgreSQL dev container is healthy!"
+              break
+            fi
+            echo "Waiting for postgres health status (attempt $i/30)..."
+            sleep 2
+          done
+
+      - name: Run Developer Database Setup (pnpm db:setup-dev)
+        run: pnpm db:setup-dev
+
+      - name: Verify erp_dev contents (4 currencies, 7 lost reasons)
+        run: |
+          docker exec bodo-postgres-dev psql -U erp_app -d erp_dev -c "SELECT code, decimals FROM currencies;"
+          CURR_COUNT=$(docker exec bodo-postgres-dev psql -U erp_app -d erp_dev -t -A -c "SELECT COUNT(*) FROM currencies;")
+          if [ "$CURR_COUNT" -ne 4 ]; then
+            echo "Expected 4 currencies, found $CURR_COUNT"
+            exit 1
+          fi
+
+          docker exec bodo-postgres-dev psql -U erp_app -d erp_dev -c "SELECT name, applies_to FROM lost_reasons;"
+          REASONS_COUNT=$(docker exec bodo-postgres-dev psql -U erp_app -d erp_dev -t -A -c "SELECT COUNT(*) FROM lost_reasons;")
+          if [ "$REASONS_COUNT" -ne 7 ]; then
+            echo "Expected 7 lost reasons, found $REASONS_COUNT"
+            exit 1
+          fi
+          echo "SUCCESS: erp_dev verified with 4 currencies and 7 lost reasons."
+
+      - name: Stop dev containers
+        if: always()
+        run: docker compose --env-file .env -f infra/docker-compose.dev.yml down -v

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * check-drift.mjs
  * Cross-platform script to detect schema drift between prisma/schema.prisma and migrations.
@@ -5,83 +6,70 @@
  */
 
 import { execSync } from 'node:child_process';
-import pg from 'pg';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { filterDrift } from './check-drift-filter.mjs';
+import { getDbConfig, connectWithRetry, formatDbError } from './db-env.mjs';
 
-const { Client } = pg;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const projectRoot = path.resolve(__dirname, '..');
 
 async function run() {
   console.log('[INFO] Starting schema drift verification...');
+  const config = getDbConfig();
 
   let shadowUrl = process.env.SHADOW_DATABASE_URL;
   let createdTempDb = false;
   const tempDbName = `erp_drift_shadow_${Date.now()}`;
 
-  // If no shadow database URL is provided, try to create an ephemeral one
+  // If no shadow database URL is provided, create an ephemeral one
   if (!shadowUrl) {
-    const rawUrl =
-      process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5433/postgres';
-    const parsed = new URL(rawUrl);
-
-    const hosts = [parsed.hostname];
-    if (parsed.hostname === 'localhost') hosts.push('127.0.0.1');
-
-    let adminClient = null;
-    for (let attempt = 1; attempt <= 20; attempt++) {
-      for (const h of hosts) {
-        try {
-          const client = new Client({
-            host: h,
-            port: parseInt(parsed.port || '5432', 10),
-            user: process.env.POSTGRES_USER || parsed.username || 'postgres',
-            password: process.env.POSTGRES_PASSWORD || parsed.password || 'postgres',
-            database: 'postgres',
-          });
-          await client.connect();
-          adminClient = client;
-          parsed.hostname = h;
-          break;
-        } catch {
-          // retry
-        }
-      }
-      if (adminClient) break;
-      await new Promise((r) => setTimeout(r, 1000));
+    let conn;
+    try {
+      conn = await connectWithRetry(config.getSuperuserUrl('postgres'), {
+        maxAttempts: 15,
+        delayMs: 1000,
+      });
+    } catch (err) {
+      console.error('[ERROR] Could not connect to PostgreSQL to create shadow database:');
+      console.error(formatDbError(err, config.host, config.port));
+      process.exit(1);
     }
 
-    if (adminClient) {
-      try {
-        console.log(`[INFO] Creating ephemeral shadow database "${tempDbName}"...`);
-        await adminClient.query(`CREATE DATABASE "${tempDbName}" OWNER erp_migrator`);
-        createdTempDb = true;
-
-        // Shadow URL with erp_migrator credentials for migration execution
-        parsed.username = 'erp_migrator';
-        parsed.password = process.env.ERP_MIGRATOR_PASSWORD || 'migrator_secret_change_in_prod';
-        parsed.pathname = `/${tempDbName}`;
-        shadowUrl = parsed.toString();
-      } catch (err) {
-        console.warn(`[WARN] Could not create ephemeral shadow database: ${err.message}`);
-      } finally {
-        await adminClient.end().catch(() => {});
-      }
+    const { pool, client } = conn;
+    try {
+      console.log(`[INFO] Creating ephemeral shadow database "${tempDbName}"...`);
+      await client.query(`CREATE DATABASE "${tempDbName}" OWNER erp_migrator;`);
+      createdTempDb = true;
+      shadowUrl = config.getMigratorUrl(tempDbName);
+    } catch (err) {
+      console.error(`[ERROR] Could not create ephemeral shadow database:`);
+      console.error(formatDbError(err, config.host, config.port));
+      process.exit(1);
+    } finally {
+      client.release();
+      await pool.end().catch(() => {});
     }
   }
 
   try {
     const shadowFlag = shadowUrl ? `--shadow-database-url "${shadowUrl}"` : '';
-    const cmd = `pnpm --filter @bodo/api exec prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma ${shadowFlag} --script`;
+    const schemaPath = path.resolve(projectRoot, 'apps/api/prisma/schema.prisma');
+    const migrationsPath = path.resolve(projectRoot, 'apps/api/prisma/migrations');
+
+    const cmd = `pnpm --filter @bodo/api exec prisma migrate diff --from-migrations "${migrationsPath}" --to-schema-datamodel "${schemaPath}" ${shadowFlag} --script`;
 
     console.log('[INFO] Running prisma migrate diff...');
     let rawOutput = '';
     try {
       rawOutput = execSync(cmd, {
-        cwd: process.cwd(),
+        cwd: projectRoot,
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
+        shell: process.platform === 'win32',
       });
     } catch (execErr) {
-      // If prisma migrate diff exits with non-zero, it is a fatal failure
       const stdout = execErr.stdout ? execErr.stdout.toString() : '';
       const stderr = execErr.stderr ? execErr.stderr.toString() : '';
       console.error('[ERROR] Failed to execute prisma migrate diff:');
@@ -109,19 +97,13 @@ async function run() {
   } finally {
     if (createdTempDb) {
       try {
-        const rawUrl =
-          process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5433/postgres';
-        const parsed = new URL(rawUrl);
-        const adminClient = new Client({
-          host: parsed.hostname,
-          port: parseInt(parsed.port || '5432', 10),
-          user: process.env.POSTGRES_USER || parsed.username || 'postgres',
-          password: process.env.POSTGRES_PASSWORD || parsed.password || 'postgres',
-          database: 'postgres',
+        const conn = await connectWithRetry(config.getSuperuserUrl('postgres'), {
+          maxAttempts: 5,
+          delayMs: 500,
         });
-        await adminClient.connect();
-        await adminClient.query(`DROP DATABASE IF EXISTS "${tempDbName}" WITH (FORCE)`);
-        await adminClient.end();
+        await conn.client.query(`DROP DATABASE IF EXISTS "${tempDbName}" WITH (FORCE);`);
+        conn.client.release();
+        await conn.pool.end().catch(() => {});
         console.log(`[INFO] Dropped ephemeral shadow database "${tempDbName}".`);
       } catch (cleanupErr) {
         console.warn(`[WARN] Failed to drop ephemeral shadow database: ${cleanupErr.message}`);
@@ -131,6 +113,7 @@ async function run() {
 }
 
 run().catch((err) => {
-  console.error('[FATAL]', err);
+  const config = getDbConfig();
+  console.error('[FATAL]', formatDbError(err, config.host, config.port));
   process.exit(1);
 });
