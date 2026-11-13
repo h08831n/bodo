@@ -637,21 +637,32 @@ registerTimelineEvent({
 
 ### ۸.۲ Database Manager (`/v1/admin`، فقط با master password)
 
-| متد    | مسیر                         | توضیح                                                                 |
-| ------ | ---------------------------- | --------------------------------------------------------------------- |
-| POST   | `/login`                     | ورود با master password ← توکن ۱۵ دقیقه‌ای                            |
-| GET    | `/databases`                 | فهرست: slug، نام شرکت، نسخه‌ی اسکیما، حجم، آخرین بکاپ، وضعیت          |
-| POST   | `/databases`                 | ساخت؛ بدنه: `name`، `adminUsername`، `adminFullName`، `adminPassword` |
-| POST   | `/databases/:name/duplicate` | بدنه: `newName`، `neutralize`                                         |
-| GET    | `/databases/:name/backup`    | دانلود zip (استریم)                                                   |
-| POST   | `/databases/restore`         | multipart: فایل، `newName`، `neutralize`                              |
-| DELETE | `/databases/:name`           | بدنه: `confirmName`                                                   |
-| POST   | `/databases/:name/upgrade`   | اجرای مایگریشن                                                        |
-| PUT    | `/databases/:name/domain`    | تنظیم یا حذف دامنه                                                    |
-| POST   | `/change-master-password`    |                                                                       |
-| GET    | `/jobs/:id`                  | وضعیت و پیشرفت عملیات طولانی                                          |
+| متد    | مسیر                             | توضیح                                                                 |
+| ------ | -------------------------------- | --------------------------------------------------------------------- |
+| POST   | `/login`                         | ورود با master password ← توکن ۱۵ دقیقه‌ای                            |
+| GET    | `/databases`                     | فهرست: slug، نام شرکت، نسخه‌ی اسکیما، حجم، آخرین بکاپ، وضعیت          |
+| POST   | `/databases`                     | ساخت؛ بدنه: `name`، `adminUsername`، `adminFullName`، `adminPassword` |
+| POST   | `/databases/:name/duplicate`     | بدنه: `newName`، `neutralize`                                         |
+| POST   | `/databases/:name/backups`       | ثبت Job ایجاد بکاپ                                                    |
+| GET    | `/databases/:name/backups`       | فهرست فایل‌های بکاپ موجود                                             |
+| GET    | `/databases/:name/backups/:file` | دانلود فایل بکاپ (استریم zip)                                         |
+| DELETE | `/databases/:name/backups/:file` | حذف فایل بکاپ                                                         |
+| POST   | `/databases/restore`             | multipart: فایل، `newName`، `neutralize`                              |
+| DELETE | `/databases/:name`               | بدنه: `confirmName` (حذف پس از بکاپ خودکار)                           |
+| POST   | `/databases/:name/upgrade`       | اجرای مایگریشن‌های معلق                                               |
+| POST   | `/databases/:name/repair`        | ترمیم وضعیت مایگریشن‌های ناموفق و بازگردانی دسترسی دیتابیس            |
+| POST   | `/databases/:name/maintenance`   | فعال/غیرفعال‌سازی دستی حالت Maintenance                               |
+| PUT    | `/databases/:name/domain`        | تنظیم یا حذف دامنه                                                    |
+| POST   | `/change-master-password`        | تغییر رمز ادمین اصلی                                                  |
+| GET    | `/jobs`                          | فهرست عملیات جاری و اخیر                                              |
+| GET    | `/jobs/:id`                      | وضعیت و پیشرفت عملیات طولانی                                          |
 
-عملیات طولانی (ساخت، کپی، بکاپ، بازیابی، حذف) به‌صورت job اجرا می‌شوند و UI پیشرفت را نشان می‌دهد.
+همچنین اندپوینت‌های عمومی بدون نیاز به احراز هویت (تحت کنترل پرچم‌ها و rate-limit):
+
+- `GET /v1/public/databases`: در صورت فعال بودن `DB_LIST_PUBLIC=true`، فهرست دیتابیس‌های فعال (فقط slug).
+- `GET /v1/public/tenant-by-host`: تفکیک دیتابیس بر اساس hostname دامنه درخواست‌دهنده.
+
+عملیات طولانی (ساخت، کپی، بکاپ، بازیابی، حذف، ارتقا) به‌صورت Job در صف Worker اجرا می‌شوند و UI/CLI پیشرفت را نشان می‌دهند.
 
 ### ۸.۳ Endpointهای دیتابیس شرکت
 
