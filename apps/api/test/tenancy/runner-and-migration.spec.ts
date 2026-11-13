@@ -17,8 +17,19 @@ jest.setTimeout(120000);
 
 describe('TenantRunner & MigrationRunner Invariants (Tests 10, 11)', () => {
   const env = getEnv();
-  const host = env.POSTGRES_HOST;
-  const port = env.POSTGRES_PORT;
+  let host = env.POSTGRES_HOST;
+  let port = env.POSTGRES_PORT;
+  if (process.env.TEST_DATABASE_URL) {
+    try {
+      const parsed = new URL(process.env.TEST_DATABASE_URL);
+      host = parsed.hostname;
+      port = parseInt(parsed.port || '5432', 10);
+      process.env.POSTGRES_HOST = host;
+      process.env.POSTGRES_PORT = String(port);
+    } catch {
+      // ignore
+    }
+  }
   const superuserPass = process.env.POSTGRES_PASSWORD || 'postgres';
 
   const db1 = 'erp_test_runner_1';
