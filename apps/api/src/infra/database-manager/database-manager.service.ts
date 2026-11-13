@@ -896,7 +896,11 @@ export class DatabaseManagerService implements OnApplicationBootstrap {
     }
 
     try {
-      const stat = fs.statfsSync(path.resolve(getEnv().BACKUP_DIR));
+      const backupDir = path.resolve(getEnv().BACKUP_DIR);
+      if (!fs.existsSync(backupDir)) {
+        fs.mkdirSync(backupDir, { recursive: true });
+      }
+      const stat = fs.statfsSync(backupDir);
       const freeBytes = stat.bsize * stat.bavail;
       const requiredBytes = sizeBytes * 1.5;
 

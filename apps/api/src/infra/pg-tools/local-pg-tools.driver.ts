@@ -67,6 +67,9 @@ export class LocalPgToolsDriver implements PgToolsDriver {
     if (options.port) {
       args.push('-p', String(options.port));
     }
+    if (options.outputFilePath) {
+      args.push('-f', options.outputFilePath);
+    }
 
     const childEnv = { ...process.env };
     if (options.password) {
@@ -82,20 +85,12 @@ export class LocalPgToolsDriver implements PgToolsDriver {
     let stderr = '';
     child.stderr.on('data', (d) => (stderr += d.toString()));
 
-    let bytesWritten = 0;
-    child.stdout.on('data', (chunk) => {
-      bytesWritten += chunk.length;
-    });
-
     const streamPromises: Promise<unknown>[] = [];
 
     if (options.destinationStream) {
       streamPromises.push(pipeline(child.stdout, options.destinationStream));
-    } else if (options.outputFilePath) {
-      const outStream = fs.createWriteStream(options.outputFilePath);
-      streamPromises.push(pipeline(child.stdout, outStream));
     } else {
-      // Drain if no destination provided
+      // Drain if writing directly to file via -f or no stream provided
       child.stdout.resume();
     }
 
@@ -116,6 +111,10 @@ export class LocalPgToolsDriver implements PgToolsDriver {
     });
 
     await Promise.all([exitPromise, ...streamPromises]);
+    const bytesWritten =
+      options.outputFilePath && fs.existsSync(options.outputFilePath)
+        ? fs.statSync(options.outputFilePath).size
+        : 0;
     return { bytesWritten };
   }
 
@@ -137,6 +136,9 @@ export class LocalPgToolsDriver implements PgToolsDriver {
     if (options.port) {
       args.push('-p', String(options.port));
     }
+    if (options.inputFilePath) {
+      args.push(options.inputFilePath);
+    }
 
     const childEnv = { ...process.env };
     if (options.password) {
@@ -156,9 +158,6 @@ export class LocalPgToolsDriver implements PgToolsDriver {
 
     if (options.sourceStream) {
       streamPromises.push(pipeline(options.sourceStream, child.stdin));
-    } else if (options.inputFilePath) {
-      const inStream = fs.createReadStream(options.inputFilePath);
-      streamPromises.push(pipeline(inStream, child.stdin));
     } else {
       child.stdin.end();
     }
