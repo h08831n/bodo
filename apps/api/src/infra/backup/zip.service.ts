@@ -72,7 +72,7 @@ export class ZipService {
         resolve({ totalBytes: archive.pointer() });
       });
 
-      archive.on('error', (err) => {
+      archive.on('error', (err: unknown) => {
         reject(err);
       });
 
@@ -309,7 +309,7 @@ export class ZipService {
 
     let manifest: BackupManifest;
     try {
-      manifest = JSON.parse(manifestBuffer.toString('utf8'));
+      manifest = JSON.parse((manifestBuffer as Buffer).toString('utf8'));
     } catch {
       if (fs.existsSync(normalizedDest)) {
         fs.rmSync(normalizedDest, { recursive: true, force: true });

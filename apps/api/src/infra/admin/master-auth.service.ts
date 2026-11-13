@@ -157,7 +157,7 @@ export class MasterAuthService implements OnModuleInit {
     };
 
     const secret = this.getJwtSecret();
-    const token = this.signJwt(payload, secret);
+    const token = this.signJwt(payload as unknown as Record<string, unknown>, secret);
 
     return { token, expiresIn };
   }
@@ -188,9 +188,10 @@ export class MasterAuthService implements OnModuleInit {
     // Derive via HKDF from JWT_SECRET if ADMIN_JWT_SECRET not provided
     const salt = Buffer.from('bodo-admin-jwt-salt-2026', 'utf8');
     const ikm = Buffer.from(env.JWT_SECRET, 'utf8');
-    return crypto
-      .hkdfSync('sha256', ikm, salt, Buffer.from('admin-auth', 'utf8'), 32)
-      .toString('hex');
+    const derived = Buffer.from(
+      crypto.hkdfSync('sha256', ikm, salt, Buffer.from('admin-auth', 'utf8'), 32),
+    );
+    return derived.toString('hex');
   }
 
   private signJwt(payload: Record<string, unknown>, secret: string): string {
@@ -211,7 +212,11 @@ export class MasterAuthService implements OnModuleInit {
       const parts = token.split('.');
       if (parts.length !== 3) return null;
 
-      const [encodedHeader, encodedPayload, signature] = parts;
+      const encodedHeader = parts[0];
+      const encodedPayload = parts[1];
+      const signature = parts[2];
+
+      if (!encodedHeader || !encodedPayload || !signature) return null;
       const expectedSignature = crypto
         .createHmac('sha256', secret)
         .update(`${encodedHeader}.${encodedPayload}`)

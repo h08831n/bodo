@@ -1,7 +1,16 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { buildDatabaseUrl } from '@bodo/utils';
 import { getEnv } from '../../config/env.config';
+import { RedisService } from '../redis/redis.service';
+import Redis from 'ioredis';
 import pg from 'pg';
 
 interface ClientCacheEntry {
@@ -29,6 +38,7 @@ export class TenantClientManager implements OnModuleInit, OnModuleDestroy {
   private readonly activeLeases = new Map<string, number>();
   private readonly inFlightInit = new Map<string, Promise<PrismaClient>>();
   private readonly pendingEviction = new Set<string>();
+  private subscriberClient?: Redis;
 
   private readonly maxClients: number;
   private readonly poolSize: number;
@@ -37,7 +47,7 @@ export class TenantClientManager implements OnModuleInit, OnModuleDestroy {
   private readonly port: number;
   private readonly appPassword: string;
 
-  constructor() {
+  constructor(@Optional() @Inject(RedisService) private readonly redisService?: RedisService) {
     const env = getEnv();
     this.maxClients = env.TENANT_MAX_CLIENTS;
     this.poolSize = env.TENANT_POOL_SIZE;
@@ -49,6 +59,36 @@ export class TenantClientManager implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit(): Promise<void> {
     await this.checkConnectionBudget();
+    await this.initPubSub();
+  }
+
+  private async initPubSub(): Promise<void> {
+    if (!this.redisService) return;
+    try {
+      this.subscriberClient = this.redisService.getClient().duplicate();
+      await this.subscriberClient.subscribe('tenant:evict');
+      this.subscriberClient.on('message', async (channel, message) => {
+        if (channel === 'tenant:evict' && message) {
+          this.logger.log(`Received eviction broadcast for tenant database "${message}"`);
+          await this.evict(message);
+        }
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Failed to initialize tenant eviction pub/sub subscriber: ${msg}`);
+    }
+  }
+
+  async broadcastEvict(db: string): Promise<void> {
+    await this.evict(db);
+    if (this.redisService) {
+      try {
+        await this.redisService.getClient().publish('tenant:evict', db);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`Failed to publish eviction message for "${db}": ${msg}`);
+      }
+    }
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -212,6 +252,11 @@ export class TenantClientManager implements OnModuleInit, OnModuleDestroy {
     this.clients.clear();
     this.activeLeases.clear();
     this.pendingEviction.clear();
+
+    if (this.subscriberClient) {
+      this.subscriberClient.disconnect();
+      this.subscriberClient = undefined;
+    }
 
     await Promise.allSettled(
       entries.map(async ([, entry]) => {

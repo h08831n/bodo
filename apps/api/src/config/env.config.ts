@@ -50,6 +50,9 @@ export const EnvSchema = z.object({
     .string()
     .transform((val) => parseInt(val, 10))
     .default('5433'),
+  POSTGRES_USER: z.string().default('postgres'),
+  POSTGRES_PASSWORD: z.string().default('postgres'),
+  POSTGRES_DB: z.string().default('postgres'),
   ERP_APP_PASSWORD: z.string().default('app_secret_change_in_prod'),
   ERP_MIGRATOR_PASSWORD: z.string().default('migrator_secret_change_in_prod'),
   ERP_PROVISIONER_PASSWORD: z.string().default('provisioner_secret_change_in_prod'),

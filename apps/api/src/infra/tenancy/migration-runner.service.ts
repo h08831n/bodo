@@ -60,6 +60,26 @@ export class MigrationRunnerService {
   }
 
   /**
+   * Reads available migration directory names from filesystem in sorted order.
+   */
+  getMigrationList(migrationsDir = this.defaultMigrationsPath): string[] {
+    const diskMigrations: string[] = [];
+    if (fs.existsSync(migrationsDir)) {
+      const entries = fs.readdirSync(migrationsDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory() && !entry.name.startsWith('.')) {
+          const sqlFile = path.join(migrationsDir, entry.name, 'migration.sql');
+          if (fs.existsSync(sqlFile)) {
+            diskMigrations.push(entry.name);
+          }
+        }
+      }
+    }
+    diskMigrations.sort();
+    return diskMigrations;
+  }
+
+  /**
    * Checks the migration status for a tenant database by connecting as erp_migrator
    * and comparing applied migrations in _prisma_migrations with directories on disk.
    */
@@ -93,21 +113,7 @@ export class MigrationRunnerService {
       await pool.end().catch(() => {});
     }
 
-    // Read available migration names from filesystem
-    const diskMigrations: string[] = [];
-    if (fs.existsSync(migrationsDir)) {
-      const entries = fs.readdirSync(migrationsDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory() && !entry.name.startsWith('.')) {
-          const sqlFile = path.join(migrationsDir, entry.name, 'migration.sql');
-          if (fs.existsSync(sqlFile)) {
-            diskMigrations.push(entry.name);
-          }
-        }
-      }
-    }
-
-    diskMigrations.sort();
+    const diskMigrations = this.getMigrationList(migrationsDir);
     const appliedSet = new Set(applied);
     const pending = diskMigrations.filter((m) => !appliedSet.has(m));
 

@@ -49,7 +49,12 @@ export function isIpAllowed(clientIp: string, allowedIpsConfig: string): boolean
 
 function isIpInCidr(ip: string, cidr: string): boolean {
   try {
-    const [range, bitsStr] = cidr.split('/');
+    const parts = cidr.split('/');
+    const range = parts[0];
+    const bitsStr = parts[1];
+
+    if (!range || !bitsStr) return false;
+
     const bits = parseInt(bitsStr, 10);
 
     if (net.isIPv4(ip) && net.isIPv4(range)) {

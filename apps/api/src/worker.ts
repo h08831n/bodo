@@ -1,30 +1,38 @@
-import { getEnv } from './config/env.config';
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+import { DatabaseManagerService } from './infra/database-manager/database-manager.service';
+import { JobQueueService } from './infra/database-manager/job-queue.service';
+import { AdminWorkerRunner } from './infra/database-manager/worker-runner';
 import { LoggerService } from './common/logger/logger.service';
 
 async function bootstrapWorker() {
-  const env = getEnv();
   const logger = new LoggerService();
+  logger.log('Bootstrapping Bodo Background Worker application context...', 'WorkerBootstrap');
 
-  logger.log(
-    `Bodo Background Worker started successfully in environment: ${env.NODE_ENV}`,
-    'WorkerBootstrap',
-  );
+  const appContext = await NestFactory.createApplicationContext(AppModule, {
+    logger: false,
+  });
+
+  const dbManager = appContext.get(DatabaseManagerService);
+  const jobQueue = appContext.get(JobQueueService);
+
+  const runner = new AdminWorkerRunner(dbManager, jobQueue);
+  await runner.start();
 
   // Setup graceful termination handlers
-  const shutdown = (signal: string) => {
+  const shutdown = async (signal: string) => {
     logger.log(`Worker received ${signal}, shutting down gracefully...`, 'WorkerShutdown');
+    await runner.stop();
+    await appContext.close();
     process.exit(0);
   };
 
-  process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-
-  logger.log('Worker is idling, waiting for jobs...', 'Worker');
-
-  // Keep event loop active until worker logic is expanded in subsequent stages
-  setInterval(() => {
-    // idle heartbeat
-  }, 60000);
+  process.on('SIGINT', () => {
+    shutdown('SIGINT').catch(() => process.exit(1));
+  });
+  process.on('SIGTERM', () => {
+    shutdown('SIGTERM').catch(() => process.exit(1));
+  });
 }
 
 bootstrapWorker().catch((err) => {

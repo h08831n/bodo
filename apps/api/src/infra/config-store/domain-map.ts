@@ -86,4 +86,45 @@ export class DomainMap {
     current[cleanDomain] = db;
     await this.configStore.write(DomainMap.FILENAME, current, DomainMapSchema);
   }
+
+  async set(slug: string, host: string): Promise<void> {
+    await this.setDomain(host, slug.startsWith('erp_') ? slug : `erp_${slug}`);
+  }
+
+  async delete(slug: string): Promise<void> {
+    const current = await this.getMapping();
+    const dbName = slug.startsWith('erp_') ? slug : `erp_${slug}`;
+    let changed = false;
+
+    for (const [host, mappedDb] of Object.entries(current)) {
+      if (mappedDb === dbName || mappedDb === slug) {
+        delete current[host];
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      await this.configStore.write(DomainMap.FILENAME, current, DomainMapSchema);
+    }
+  }
+
+  async findHostByDatabase(slug: string): Promise<string | null> {
+    const map = await this.getMapping();
+    const dbName = slug.startsWith('erp_') ? slug : `erp_${slug}`;
+    for (const [host, mappedDb] of Object.entries(map)) {
+      if (mappedDb === dbName || mappedDb === slug) {
+        return host;
+      }
+    }
+    return null;
+  }
+
+  async findDatabaseByHost(host: string): Promise<string | null> {
+    const cleanHost = host.trim().toLowerCase().split(':')[0];
+    if (!cleanHost) return null;
+    const map = await this.getMapping();
+    const db = map[cleanHost];
+    if (!db) return null;
+    return db.replace(/^erp_/, '');
+  }
 }
