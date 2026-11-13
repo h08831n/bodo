@@ -4,6 +4,7 @@ WORKDIR /app
 # NODE_OPTIONS is strictly limited to build stages to resolve IPv4 precedence during dependency download
 ENV NODE_OPTIONS="--dns-result-order=ipv4first"
 
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN npm install -g pnpm@12.18.0
 
 # Stage 2: Builder
@@ -34,12 +35,13 @@ FROM node:24-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Install PostgreSQL 16 client for backup/restore pg_dump/pg_restore
+# Install PostgreSQL 16 client for backup/restore pg_dump/pg_restore, and OpenSSL for Prisma engine
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gnupg \
     lsb-release \
     ca-certificates \
+    openssl \
     && echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
     && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg \
     && apt-get update && apt-get install -y --no-install-recommends \

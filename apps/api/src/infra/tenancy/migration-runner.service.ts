@@ -79,7 +79,7 @@ export class MigrationRunnerService {
       const res = await pool.query(`
         SELECT migration_name
         FROM _prisma_migrations
-        WHERE rolled_back_at IS NULL
+        WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
         ORDER BY finished_at ASC;
       `);
       for (const row of res.rows) {
@@ -192,14 +192,17 @@ export class MigrationRunnerService {
    * Upgrades all active tenant databases sequentially or with concurrency,
    * guaranteeing that a failure on one database does not prevent the others from migrating.
    */
-  async upgradeAll(_options?: { concurrency?: number }): Promise<UpgradeResult[]> {
+  async upgradeAll(options?: {
+    schemaPath?: string;
+    concurrency?: number;
+  }): Promise<UpgradeResult[]> {
     const activeDbs = await this.databaseRegistry.listActive();
     this.logger.log(`Running upgradeAll across ${activeDbs.length} active database(s)...`);
 
     const results: UpgradeResult[] = [];
     for (const db of activeDbs) {
       try {
-        const res = await this.upgrade(db);
+        const res = await this.upgrade(db, { schemaPath: options?.schemaPath });
         results.push(res);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);

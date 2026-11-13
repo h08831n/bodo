@@ -34,7 +34,9 @@ describe('TenantRunner & MigrationRunner Invariants (Tests 10, 11)', () => {
   let tenantRunner: TenantRunnerService;
   let migrationRunner: MigrationRunnerService;
 
-  const mockMigrationsDir = path.resolve(__dirname, '../temp_mock_migrations');
+  const mockSuiteDir = path.resolve(__dirname, '../temp_mock_suite');
+  const mockMigrationsDir = path.join(mockSuiteDir, 'migrations');
+  const mockSchemaPath = path.join(mockSuiteDir, 'schema.prisma');
 
   beforeAll(async () => {
     superuserPool = new pg.Pool({
@@ -54,30 +56,18 @@ describe('TenantRunner & MigrationRunner Invariants (Tests 10, 11)', () => {
     tenantRunner = new TenantRunnerService(databaseRegistry, maintenanceService, clientManager);
     migrationRunner = new MigrationRunnerService(maintenanceService, databaseRegistry);
 
-    // Prepare migration SQL for base init
-    const baseMigrationSql = fs.readFileSync(
-      path.resolve(__dirname, '../../prisma/migrations/0001_init/migration.sql'),
-      'utf8',
-    );
-
-    // Setup 3 tenant databases
+    // Setup 3 tenant databases and baseline them properly using prisma migrate deploy
     for (const db of testDatabases) {
       await superuserPool.query(`DROP DATABASE IF EXISTS ${db} WITH (FORCE);`);
       await superuserPool.query(`CREATE DATABASE ${db} OWNER erp_migrator;`);
 
-      // Run base migration as erp_migrator
-      const migClient = new pg.Client({
-        host,
-        port,
-        user: 'erp_migrator',
-        password: env.ERP_MIGRATOR_PASSWORD,
-        database: db,
-      });
-      await migClient.connect();
-      await migClient.query(baseMigrationSql);
-      await migClient.end();
+      // Run initial migration 0001_init through MigrationRunner
+      const initResult = await migrationRunner.upgrade(db);
+      if (!initResult.success) {
+        throw new Error(`Failed to baseline initial schema for ${db}: ${initResult.error}`);
+      }
 
-      // Seed baseline
+      // Seed baseline entities
       const seedClient = new PrismaClient({
         datasources: {
           db: {
@@ -106,8 +96,8 @@ describe('TenantRunner & MigrationRunner Invariants (Tests 10, 11)', () => {
     }
     await superuserPool.end().catch(() => {});
 
-    if (fs.existsSync(mockMigrationsDir)) {
-      fs.rmSync(mockMigrationsDir, { recursive: true, force: true });
+    if (fs.existsSync(mockSuiteDir)) {
+      fs.rmSync(mockSuiteDir, { recursive: true, force: true });
     }
   });
 
@@ -160,107 +150,138 @@ describe('TenantRunner & MigrationRunner Invariants (Tests 10, 11)', () => {
   });
 
   it('11. MigrationRunner: status tracking, upgrade with mock migration, durable failure state, and Redis rehydration', async () => {
-    // 1. Setup mock migrations directory with 0001_init and 0002_add_column
+    // 1. Prepare mock schema and migrations directory with 0001_init and 0002_add_test_table
     fs.mkdirSync(path.join(mockMigrationsDir, '0001_init'), { recursive: true });
-    fs.mkdirSync(path.join(mockMigrationsDir, '0002_add_column'), { recursive: true });
+    fs.mkdirSync(path.join(mockMigrationsDir, '0002_add_test_table'), { recursive: true });
 
-    // Copy original 0001
+    // Copy original 0001_init migration SQL
     fs.copyFileSync(
       path.resolve(__dirname, '../../prisma/migrations/0001_init/migration.sql'),
       path.join(mockMigrationsDir, '0001_init/migration.sql'),
     );
 
-    // Valid 0002 SQL migration
+    // Valid 0002 SQL migration: creates a new table
     fs.writeFileSync(
-      path.join(mockMigrationsDir, '0002_add_column/migration.sql'),
-      'ALTER TABLE company_profile ADD COLUMN IF NOT EXISTS mock_test_col TEXT;\n',
+      path.join(mockMigrationsDir, '0002_add_test_table/migration.sql'),
+      `CREATE TABLE test_migration_table (
+        id UUID PRIMARY KEY,
+        name TEXT NOT NULL
+      );\n`,
       'utf8',
     );
 
-    // Status check on db1
-    const initialStatus = await migrationRunner.status(db1, mockMigrationsDir);
-    expect(initialStatus.pending).toContain('0002_add_column');
-
-    // 2. Test status and durable failure
-    // Set up a broken migration on db2
-    const brokenMigrationsDir = path.resolve(__dirname, '../temp_broken_migrations');
-    fs.mkdirSync(path.join(brokenMigrationsDir, '0001_init'), { recursive: true });
-    fs.mkdirSync(path.join(brokenMigrationsDir, '0002_broken'), { recursive: true });
-    fs.copyFileSync(
-      path.resolve(__dirname, '../../prisma/migrations/0001_init/migration.sql'),
-      path.join(brokenMigrationsDir, '0001_init/migration.sql'),
-    );
-    fs.writeFileSync(
-      path.join(brokenMigrationsDir, '0002_broken/migration.sql'),
-      'INVALID SYNTAX BROKEN SQL STATEMENT;\n',
-      'utf8',
-    );
-
-    // Create a mock schema pointing to broken migrations
-    const mockSchemaPath = path.join(brokenMigrationsDir, 'schema.prisma');
+    // Mock schema.prisma pointing to the mock environment
     fs.writeFileSync(
       mockSchemaPath,
-      `
-      datasource db {
+      `datasource db {
         provider = "postgresql"
         url      = env("DATABASE_URL")
       }
       generator client {
         provider = "prisma-client-js"
-      }
-      `,
+      }\n`,
       'utf8',
     );
 
-    // Run upgrade on db2 with broken migration
-    const brokenResult = await migrationRunner.upgrade(db2, { schemaPath: mockSchemaPath });
-    expect(brokenResult.success).toBe(false);
+    // Check status before upgrade across all 3 databases
+    for (const db of [db1, db2, db3]) {
+      const statusBefore = await migrationRunner.status(db, mockMigrationsDir);
+      // Assertion: 1 applied, 1 pending
+      expect(statusBefore.applied).toEqual(['0001_init']);
+      expect(statusBefore.pending).toEqual(['0002_add_test_table']);
+    }
 
-    // Verify db2 is left in durable maintenance mode
+    // 2. Pre-create table `test_migration_table` ONLY in db3 to induce a genuine SQL collision failure
+    const db3MigPool = new pg.Pool({
+      host,
+      port,
+      user: 'erp_migrator',
+      password: env.ERP_MIGRATOR_PASSWORD,
+      database: db3,
+      max: 1,
+    });
+    await db3MigPool.query('CREATE TABLE test_migration_table (id INT PRIMARY KEY);');
+    await db3MigPool.end();
+
+    // 3. Upgrade db1 and db2 (A and B): both must succeed
+    const resDb1 = await migrationRunner.upgrade(db1, { schemaPath: mockSchemaPath });
+    const resDb2 = await migrationRunner.upgrade(db2, { schemaPath: mockSchemaPath });
+
+    expect(resDb1.success).toBe(true);
+    expect(resDb2.success).toBe(true);
+
+    // 4. Upgrade db3 (C): must fail due to SQL collision
+    const resDb3 = await migrationRunner.upgrade(db3, { schemaPath: mockSchemaPath });
+
+    expect(resDb3.success).toBe(false);
+    // Assert: error cause is genuine SQL error (relation already exists), NOT P3005
+    expect(resDb3.error).toContain('already exists');
+    expect(resDb3.error).not.toContain('P3005');
+
+    // 5. Assert status after upgrade
+    const statusDb1After = await migrationRunner.status(db1, mockMigrationsDir);
+    const statusDb2After = await migrationRunner.status(db2, mockMigrationsDir);
+    const statusDb3After = await migrationRunner.status(db3, mockMigrationsDir);
+
+    expect(statusDb1After.applied).toEqual(['0001_init', '0002_add_test_table']);
+    expect(statusDb1After.pending).toEqual([]);
+
+    expect(statusDb2After.applied).toEqual(['0001_init', '0002_add_test_table']);
+    expect(statusDb2After.pending).toEqual([]);
+
+    expect(statusDb3After.applied).toEqual(['0001_init']);
+    expect(statusDb3After.pending).toEqual(['0002_add_test_table']);
+
+    // 6. Assert maintenance states: A and B are healthy, C is in durable maintenance
+    const maintDb1 = await maintenanceService.get(db1);
     const maintDb2 = await maintenanceService.get(db2);
-    expect(maintDb2.inMaintenance).toBe(true);
-    expect(maintDb2.reason).toBe('migration_failed');
+    const maintDb3 = await maintenanceService.get(db3);
 
-    // Verify durable setting is stored in db2 system_settings table
+    expect(maintDb1.inMaintenance).toBe(false);
+    expect(maintDb2.inMaintenance).toBe(false);
+    expect(maintDb3.inMaintenance).toBe(true);
+    expect(maintDb3.reason).toBe('migration_failed');
+
+    // Verify durable setting is stored in db3's system_settings table
     const checkDurablePool = new pg.Pool({
       host,
       port,
       user: 'erp_app',
       password: env.ERP_APP_PASSWORD,
-      database: db2,
+      database: db3,
       max: 1,
     });
     const durableRow = await checkDurablePool.query(
       "SELECT value FROM system_settings WHERE key = 'maintenance';",
     );
     await checkDurablePool.end();
+
     expect(durableRow.rows[0].value.inMaintenance).toBe(true);
     expect(durableRow.rows[0].value.reason).toBe('migration_failed');
 
-    // 3. Test Redis Rehydration:
-    // Flush Redis completely
+    // 7. Test Redis flush and rehydration
     await redisService.getClient().flushall();
 
     // Confirm Redis no longer has maint key
-    const rawBefore = await redisService.getClient().get(globalKey('maint', db2));
+    const rawBefore = await redisService.getClient().get(globalKey('maint', db3));
     expect(rawBefore).toBeNull();
 
-    // Call rehydrate()
+    // Rehydrate durable flags across active databases
     await maintenanceService.rehydrate([db1, db2, db3]);
 
-    // Confirm Redis now has durable flag restored!
-    const rawAfter = await redisService.getClient().get(globalKey('maint', db2));
+    // Confirm Redis has restored db3's maintenance flag while db1 and db2 remain free
+    const rawAfter = await redisService.getClient().get(globalKey('maint', db3));
     expect(rawAfter).not.toBeNull();
     const parsed = JSON.parse(rawAfter!);
     expect(parsed.inMaintenance).toBe(true);
     expect(parsed.reason).toBe('migration_failed');
 
-    // Clean up db2 maintenance
-    await maintenanceService.clear(db2);
+    const maintDb1After = await maintenanceService.get(db1);
+    const maintDb2After = await maintenanceService.get(db2);
+    expect(maintDb1After.inMaintenance).toBe(false);
+    expect(maintDb2After.inMaintenance).toBe(false);
 
-    // Clean up broken migration temp files
-    if (fs.existsSync(brokenMigrationsDir)) {
-      fs.rmSync(brokenMigrationsDir, { recursive: true, force: true });
-    }
+    // Clean up db3 maintenance state
+    await maintenanceService.clear(db3);
   });
 });

@@ -56,7 +56,9 @@ jobs:
         run: pnpm --filter @bodo/ui build-storybook
 
       - name: Test (Unit tests & Check no external URLs)
-        run: pnpm test
+        run: |
+          pnpm test
+          node --test scripts/__tests__/check-compose-conflict.test.mjs
 
       - name: API Smoke Test (Background boot & health/live probe)
         shell: bash
@@ -79,6 +81,34 @@ jobs:
             echo "Smoke test failed: /health/live did not return 200 OK"
             exit 1
           fi
+
+      - name: Dev Endpoint Production Guard Smoke Test (Verify 404 in production mode)
+        shell: bash
+        run: |
+          NODE_ENV=production node apps/api/dist/main.js &
+          PROD_API_PID=$!
+          SUCCESS=0
+          for i in {1..30}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/health/live || true)
+            if [ "$STATUS" = "200" ]; then
+              SUCCESS=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$SUCCESS" -ne 1 ]; then
+            echo "Production API failed to boot for smoke test"
+            kill -9 $PROD_API_PID || true
+            exit 1
+          fi
+          DEV_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Database: erp_dev" http://localhost:3000/v1/dev/tenant-info || true)
+          echo "GET /v1/dev/tenant-info in production returned HTTP status: $DEV_STATUS"
+          kill -9 $PROD_API_PID || true
+          if [ "$DEV_STATUS" != "404" ]; then
+            echo "Smoke test failed: expected HTTP 404 for /v1/dev/tenant-info in production mode, got $DEV_STATUS"
+            exit 1
+          fi
+          echo "Smoke test passed: /v1/dev/tenant-info correctly returned 404 in production mode"
 
   docker-verify:
     name: Verify Docker Builds

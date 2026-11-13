@@ -47,8 +47,15 @@ export class MaintenanceService {
         });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        this.logger.error(`Failed to persist durable maintenance flag in "${db}": ${msg}`);
-        throw err;
+        const code = (err as { code?: string })?.code;
+        if (code === 'P2021' || msg.includes('does not exist')) {
+          this.logger.debug?.(
+            `Table system_settings does not exist in "${db}". Durable flag skipped until migrated.`,
+          );
+        } else {
+          this.logger.error(`Failed to persist durable maintenance flag in "${db}": ${msg}`);
+          throw err;
+        }
       }
     }
 

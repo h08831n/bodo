@@ -20,6 +20,17 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+:: Check for Docker Compose project name collisions (e.g. old containers created under project "infra")
+where node >nul 2>&1
+if %errorlevel% equ 0 (
+    node "%PROJECT_ROOT%\scripts\check-compose-conflict.mjs" bodo
+    if !errorlevel! neq 0 (
+        echo.
+        pause
+        exit /b 1
+    )
+)
+
 echo.
 echo ========================================================
 echo  Starting bodo ERP (Production Stack)

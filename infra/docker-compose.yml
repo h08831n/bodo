@@ -58,6 +58,11 @@ services:
       NODE_ENV: production
       PORT: 3000
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-postgres}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      ERP_APP_PASSWORD: ${ERP_APP_PASSWORD:-app_secret_change_in_prod}
+      ERP_MIGRATOR_PASSWORD: ${ERP_MIGRATOR_PASSWORD:-migrator_secret_change_in_prod}
+      ERP_PROVISIONER_PASSWORD: ${ERP_PROVISIONER_PASSWORD:-provisioner_secret_change_in_prod}
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:80,http://localhost:5173}
@@ -96,6 +101,11 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-postgres}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      ERP_APP_PASSWORD: ${ERP_APP_PASSWORD:-app_secret_change_in_prod}
+      ERP_MIGRATOR_PASSWORD: ${ERP_MIGRATOR_PASSWORD:-migrator_secret_change_in_prod}
+      ERP_PROVISIONER_PASSWORD: ${ERP_PROVISIONER_PASSWORD:-provisioner_secret_change_in_prod}
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
