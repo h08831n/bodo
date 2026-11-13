@@ -11,7 +11,15 @@ export const ErrorCodeSchema = z.enum([
   'DATABASE_REQUIRED',
   'DATABASE_MAINTENANCE',
   'DATABASE_NOT_FOUND',
+  'DEGRADED',
   'INTERNAL',
+  'DISK_SPACE_EXCEEDED',
+  'BACKUP_FAILED',
+  'RESTORE_FAILED',
+  'CORRUPTED_ARCHIVE',
+  'INCOMPATIBLE_MIGRATION',
+  'ZIP_SLIP_ATTEMPT',
+  'ZIP_BOMB_DETECTED',
 ]);
 
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
@@ -37,13 +45,17 @@ export const ApiErrorResponseSchema = z.object({
 export type ApiErrorResponse = z.infer<typeof ApiErrorResponseSchema>;
 
 export const HealthStatusSchema = z.object({
-  status: z.enum(['ok', 'error']),
+  status: z.enum(['ok', 'degraded', 'error']),
   uptime: z.number().optional(),
   timestamp: z.string(),
+  version: z.string().optional(),
+  commit: z.string().optional(),
+  buildTime: z.string().optional(),
   checks: z
     .object({
       postgres: z.enum(['up', 'down']).optional(),
       redis: z.enum(['up', 'down']).optional(),
+      worker: z.enum(['up', 'down']).optional(),
     })
     .optional(),
   tenantClients: z
@@ -56,3 +68,5 @@ export const HealthStatusSchema = z.object({
 });
 
 export type HealthStatus = z.infer<typeof HealthStatusSchema>;
+
+export * from './admin.js';

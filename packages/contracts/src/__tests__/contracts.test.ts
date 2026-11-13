@@ -62,4 +62,24 @@ describe('Contracts Schema Validation', () => {
     const parsed = HealthStatusSchema.safeParse(health);
     expect(parsed.success).toBe(true);
   });
+
+  it('validates health response structure with degraded status and worker check', () => {
+    const health = {
+      status: 'degraded',
+      timestamp: new Date().toISOString(),
+      checks: {
+        postgres: 'up',
+        redis: 'up',
+        worker: 'down',
+      },
+      tenantClients: {
+        open: 1,
+        maxClients: 20,
+        activeLeases: 0,
+      },
+    };
+
+    const parsed = HealthStatusSchema.safeParse(health);
+    expect(parsed.success).toBe(true);
+  });
 });
