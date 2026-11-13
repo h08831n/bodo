@@ -5,9 +5,9 @@ import { getEnv } from '../../src/config/env.config';
 import { DatabaseManagerService } from '../../src/infra/database-manager/database-manager.service';
 import { JobQueueService } from '../../src/infra/database-manager/job-queue.service';
 import { PgToolsService } from '../../src/infra/pg-tools/pg-tools.service';
-import { LocalPgToolsDriver } from '../../src/infra/pg-tools/local-pg-tools.driver';
 import { ZipService } from '../../src/infra/backup/zip.service';
 import { DomainMap } from '../../src/infra/config-store/domain-map';
+import { ConfigStoreService } from '../../src/infra/config-store/config-store.service';
 import { MaintenanceService } from '../../src/infra/tenancy/maintenance.service';
 import { TenantClientManager } from '../../src/infra/tenancy/tenant-client-manager';
 import { MigrationRunnerService } from '../../src/infra/tenancy/migration-runner.service';
@@ -33,6 +33,7 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
   let maintenanceService: MaintenanceService;
   let databaseRegistry: DatabaseRegistryService;
   let migrationRunner: MigrationRunnerService;
+  let configStore: ConfigStoreService;
   let domainMap: DomainMap;
   let zipService: ZipService;
   let pgTools: PgToolsService;
@@ -79,10 +80,10 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
     maintenanceService = new MaintenanceService(redisService, clientManager);
     databaseRegistry = new DatabaseRegistryService(maintenanceService);
     migrationRunner = new MigrationRunnerService(maintenanceService, databaseRegistry);
-    domainMap = new DomainMap();
+    configStore = new ConfigStoreService();
+    domainMap = new DomainMap(configStore);
 
-    const localDriver = new LocalPgToolsDriver();
-    pgTools = new PgToolsService(localDriver);
+    pgTools = new PgToolsService();
     zipService = new ZipService();
 
     dbManager = new DatabaseManagerService(
@@ -95,8 +96,7 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
       databaseRegistry,
     );
 
-    jobQueue = new JobQueueService(redisService);
-    jobQueue.onModuleInit();
+    jobQueue = new JobQueueService();
 
     // Clean up any leftovers from previous test runs
     for (const db of [testDbName, duplicateDbName, restoreDbName]) {
@@ -129,7 +129,7 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
 
     await superuserPool.end().catch(() => {});
     clientManager?.onModuleDestroy();
-    jobQueue?.onModuleDestroy();
+    await jobQueue?.onModuleDestroy();
     redisService?.onModuleDestroy();
   });
 
@@ -151,7 +151,7 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
 
     // Verify progress reported
     expect(progressLogs.length).toBeGreaterThan(0);
-    expect(progressLogs[progressLogs.length - 1].percent).toBe(100);
+    expect(progressLogs[progressLogs.length - 1]?.percent).toBe(100);
 
     // Verify database exists
     const checkRes = await superuserPool.query(
@@ -218,7 +218,10 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
     const srcFilestore = path.resolve(env.FILESTORE_DIR, testDbName);
     fs.writeFileSync(path.join(srcFilestore, 'sample.txt'), 'hello-attachment');
 
-    await dbManager.duplicateDatabase('test_mgr_orig', 'test_mgr_dup');
+    await dbManager.duplicateDatabase('test_mgr_orig', {
+      newName: 'test_mgr_dup',
+      neutralize: false,
+    });
 
     // Verify duplicated database exists
     const checkRes = await superuserPool.query(
@@ -262,17 +265,20 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
     if (!isDbConnected) return;
 
     const backupResult = await dbManager.backupDatabase(testDbName);
-    expect(fs.existsSync(backupResult.zipFilePath)).toBe(true);
-    expect(backupResult.manifest.db_name).toBe(testDbName);
-    expect(backupResult.manifest.sha256?.dump).toBeDefined();
+    const zipPath = path.join(path.resolve(env.BACKUP_DIR, testDbName), backupResult.fileName);
+    expect(fs.existsSync(zipPath)).toBe(true);
+    expect(backupResult.sizeBytes).toBeGreaterThan(0);
 
     // Verify backup listing
-    const backups = await dbManager.listBackups('test_mgr_orig');
+    const backups = dbManager.listBackups('test_mgr_orig');
     expect(backups.length).toBeGreaterThan(0);
-    expect(backups[0].filename).toBe(path.basename(backupResult.zipFilePath));
+    expect(backups[0]?.file).toBe(backupResult.fileName);
 
     // Restore from backup zip to a new database name
-    await dbManager.restoreDatabase('test_mgr_restored', backupResult.zipFilePath);
+    await dbManager.restoreDatabase(zipPath, {
+      newName: 'test_mgr_restored',
+      neutralize: false,
+    });
 
     // Verify restored database exists and data matches
     const restClient = new pg.Client({
@@ -311,7 +317,7 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
     const checkRes = await superuserPool.query<{ datallowconn: boolean }>(
       `SELECT datallowconn FROM pg_database WHERE datname = '${duplicateDbName}';`,
     );
-    expect(checkRes.rows[0].datallowconn).toBe(true);
+    expect(checkRes.rows[0]?.datallowconn).toBe(true);
   });
 
   it('Test 16: Maintenance mode toggle and unblock verification', async () => {
@@ -342,7 +348,7 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
     );
 
     // Verify completed
-    expect(progressLogs[progressLogs.length - 1].step).toBe('completed');
+    expect(progressLogs[progressLogs.length - 1]?.step).toBe('completed');
 
     // Verify database was dropped
     const checkRes = await superuserPool.query(
@@ -360,14 +366,11 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
   it('Test 18: JobQueueService enqueues BullMQ jobs and locks concurrent operations per DB', async () => {
     if (!isDbConnected) return;
 
-    const job = await jobQueue.addJob({
-      type: 'backup',
+    const jobId = await jobQueue.enqueueJob('backup', 'erp_test_mgr_orig', {
       dbName: 'erp_test_mgr_orig',
-      data: { dbName: 'erp_test_mgr_orig' },
     });
 
-    expect(job.id).toBeDefined();
-    expect(job.status).toBe('queued');
+    expect(jobId).toBeDefined();
 
     // Acquiring lock for same database must return true, second attempt must return false
     const lock1 = await jobQueue.acquireDatabaseLock('erp_test_mgr_orig', 'job-1', 10);
