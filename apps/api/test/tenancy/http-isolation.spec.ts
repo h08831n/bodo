@@ -258,4 +258,31 @@ describe('HTTP Multi-Tenant End-to-End Isolation (Tests 2, 3, 4, 5, 17)', () => 
     expect(ready.body.tenantClients.open).toBeGreaterThanOrEqual(1);
     expect(ready.body.tenantClients.activeLeases).toBe(0); // All HTTP leases released cleanly
   });
+
+  it('Production guard on /v1/dev/tenant-info: strictly 404 NOT_FOUND for existing and nonexistent X-Database', async () => {
+    const origEnv = env.NODE_ENV;
+    try {
+      (env as { NODE_ENV: string }).NODE_ENV = 'production';
+
+      // 1. Existing database
+      const resExisting = await request(app.getHttpServer())
+        .get('/v1/dev/tenant-info')
+        .set('X-Database', dbA)
+        .expect(404);
+      expect(resExisting.body.error.code).toBe('NOT_FOUND');
+
+      // 2. Non-existent database
+      const resNonExistent = await request(app.getHttpServer())
+        .get('/v1/dev/tenant-info')
+        .set('X-Database', 'erp_non_existent')
+        .expect(404);
+      expect(resNonExistent.body.error.code).toBe('NOT_FOUND');
+
+      // 3. Omitted database
+      const resOmitted = await request(app.getHttpServer()).get('/v1/dev/tenant-info').expect(404);
+      expect(resOmitted.body.error.code).toBe('NOT_FOUND');
+    } finally {
+      (env as { NODE_ENV: string }).NODE_ENV = origEnv;
+    }
+  });
 });
