@@ -153,10 +153,24 @@ jobs:
           pnpm build
 
       - name: Build API Docker Image
-        run: docker build -f apps/api/Dockerfile -t bodo-api:ci .
+        run: |
+          docker build -f apps/api/Dockerfile -t bodo-api:ci . 2>&1 | tee docker-api.log || {
+            echo "### Docker API Build Failure Log" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -n 120 docker-api.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          }
 
       - name: Build Web Docker Image
-        run: docker build -f apps/web/Dockerfile -t bodo-web:ci .
+        run: |
+          docker build -f apps/web/Dockerfile -t bodo-web:ci . 2>&1 | tee docker-web.log || {
+            echo "### Docker Web Build Failure Log" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -n 120 docker-web.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          }
 
       - name: Verify Docker Compose config
         run: docker compose --env-file .env -f infra/docker-compose.yml config
