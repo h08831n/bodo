@@ -38,6 +38,11 @@ describe('Environment Configuration Validation', () => {
     expect(config.TENANT_IDLE_MS).toBe(600000);
     expect(config.CONFIG_DIR).toBe('./data/config');
     expect(config.FILESTORE_DIR).toBe('./data/filestore');
+    expect(config.BACKUP_DIR).toBe('./data/backups');
+    expect(config.MAX_RESTORE_UPLOAD_MB).toBe(100);
+    expect(config.MAX_RESTORE_ENTRIES).toBe(100000);
+    expect(config.PG_TOOLS_DRIVER).toBe('local');
+    expect(config.DRAIN_TIMEOUT_MS).toBe(15000);
   });
 
   it('fails with a readable error when DATABASE_URL is missing', () => {

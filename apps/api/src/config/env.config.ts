@@ -67,6 +67,27 @@ export const EnvSchema = z.object({
     .default('600000'),
   CONFIG_DIR: z.string().default('./data/config'),
   FILESTORE_DIR: z.string().default('./data/filestore'),
+  BACKUP_DIR: z.string().default('./data/backups'),
+  LOGS_DIR: z.string().default('./data/logs'),
+  MAX_RESTORE_UPLOAD_MB: z
+    .string()
+    .transform((val) => parseInt(val, 10))
+    .default('100'),
+  MAX_RESTORE_ENTRIES: z
+    .string()
+    .transform((val) => parseInt(val, 10))
+    .default('100000'),
+  PG_TOOLS_DRIVER: z.enum(['local', 'docker']).default('local'),
+  PG_DOCKER_CONTAINER: z.string().default('bodo-postgres-dev'),
+  ADMIN_JWT_SECRET: z.string().optional(),
+  CLEAN_ORPHANS: z
+    .string()
+    .transform((val) => val === 'true')
+    .default('false'),
+  DRAIN_TIMEOUT_MS: z
+    .string()
+    .transform((val) => parseInt(val, 10))
+    .default('15000'),
 });
 
 export type EnvConfig = z.infer<typeof EnvSchema>;
