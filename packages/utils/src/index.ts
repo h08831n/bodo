@@ -11,3 +11,11 @@ export function truncateText(text: string, maxLength: number): string {
 }
 
 export { newId } from './uuid.js';
+export {
+  RESERVED_DATABASE_NAMES,
+  isValidDatabaseName,
+  isValidCompanySlug,
+  slugToDatabaseName,
+  databaseNameToSlug,
+} from './database-name.js';
+export { buildDatabaseUrl, type DatabaseConnectionOptions } from './database-url.js';

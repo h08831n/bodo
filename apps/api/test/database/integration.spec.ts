@@ -17,11 +17,12 @@ describe('PostgreSQL 16 Database Integration Tests (S1.2)', () => {
   let port: number;
 
   const PROVISIONER_USER = 'erp_provisioner';
-  const PROVISIONER_PASS = 'provisioner_secret_change_in_prod';
+  const PROVISIONER_PASS =
+    process.env.ERP_PROVISIONER_PASSWORD || 'provisioner_secret_change_in_prod';
   const MIGRATOR_USER = 'erp_migrator';
-  const MIGRATOR_PASS = 'migrator_secret_change_in_prod';
+  const MIGRATOR_PASS = process.env.ERP_MIGRATOR_PASSWORD || 'migrator_secret_change_in_prod';
   const APP_USER = 'erp_app';
-  const APP_PASS = 'app_secret_change_in_prod';
+  const APP_PASS = process.env.ERP_APP_PASSWORD || 'app_secret_change_in_prod';
 
   const testDbName = 'erp_test_tenant_main';
   const migrationSqlPath = path.resolve(
@@ -42,7 +43,7 @@ describe('PostgreSQL 16 Database Integration Tests (S1.2)', () => {
       try {
         const res = spawnSync('docker', ['info'], {
           stdio: 'ignore',
-          shell: process.platform === 'win32',
+          shell: false,
         });
         dockerAvailable = res.status === 0;
       } catch {

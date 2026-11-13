@@ -42,6 +42,35 @@ async function bootstrap() {
   // 5. Graceful Shutdown
   app.enableShutdownHooks();
 
+  // 6. Tenancy Bootstrap (Rehydrate durable maintenance flags and optional auto-migrate)
+  try {
+    const { DatabaseRegistryService } = await import('./infra/tenancy/database-registry.service');
+    const { MaintenanceService } = await import('./infra/tenancy/maintenance.service');
+    const dbRegistry = app.get(DatabaseRegistryService);
+    const maintenanceService = app.get(MaintenanceService);
+
+    const activeDbs = await dbRegistry.listActive().catch(() => []);
+    if (activeDbs.length > 0) {
+      await maintenanceService.rehydrate(activeDbs).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.warn(`Failed during maintenance rehydration: ${msg}`, 'Bootstrap');
+      });
+    }
+
+    if (env.AUTO_MIGRATE) {
+      logger.log(
+        'AUTO_MIGRATE enabled: applying pending migrations to all active tenant databases...',
+        'Bootstrap',
+      );
+      const { MigrationRunnerService } = await import('./infra/tenancy/migration-runner.service');
+      const migrationRunner = app.get(MigrationRunnerService);
+      await migrationRunner.upgradeAll();
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn(`Tenancy bootstrap check encountered non-fatal error: ${msg}`, 'Bootstrap');
+  }
+
   await app.listen(env.PORT);
   logger.log(
     `API application started successfully on port ${env.PORT} [${env.NODE_ENV}]`,

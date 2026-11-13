@@ -1,5 +1,6 @@
 import { Injectable, LoggerService as INestLoggerService } from '@nestjs/common';
 import pino from 'pino';
+import { tryGetCurrentDb } from '../../infra/tenancy/tenant-context';
 
 @Injectable()
 export class LoggerService implements INestLoggerService {
@@ -9,9 +10,9 @@ export class LoggerService implements INestLoggerService {
     const isDev = process.env.NODE_ENV !== 'production';
     this.pinoLogger = pino({
       level: process.env.LOG_LEVEL || (isDev ? 'debug' : 'info'),
-      base: {
-        db: null, // placeholder for tenant database name
-      },
+      mixin: () => ({
+        db: tryGetCurrentDb(),
+      }),
       transport: isDev
         ? {
             target: 'pino-pretty',
