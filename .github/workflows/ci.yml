@@ -162,6 +162,16 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:7-alpine
+        command: redis-server --requirepass redispassword
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli -a redispassword ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -210,6 +220,8 @@ jobs:
         run: pnpm test:integration
         env:
           TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
+          REDIS_URL: redis://:redispassword@127.0.0.1:6379
+          REDIS_PASSWORD: redispassword
 
   dev-setup-verification:
     name: Verify Developer Setup Flow (docker-compose.dev & db:setup-dev)

@@ -1,4 +1,4 @@
-import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
+import { Injectable, NestMiddleware, Logger, NotFoundException } from '@nestjs/common';
 import type { Request, Response, NextFunction } from 'express';
 import { DatabaseRegistryService } from './database-registry.service';
 import { TenantClientManager } from './tenant-client-manager';
@@ -6,6 +6,7 @@ import { HostResolver, HeaderResolver, TenantResolver } from './tenant-resolver'
 import { DomainMap } from '../config-store/domain-map';
 import { DatabaseRequiredError } from './errors';
 import { runWithTenant } from './tenant-context';
+import { getEnv } from '../../config/env.config';
 
 @Injectable()
 export class TenantMiddleware implements NestMiddleware {
@@ -26,6 +27,11 @@ export class TenantMiddleware implements NestMiddleware {
   async use(req: Request, res: Response, next: NextFunction): Promise<void> {
     const originalUrl = req.originalUrl || req.url || '';
     const pathname = originalUrl.split('?')[0] || '';
+
+    // Dev endpoints are strictly 404 in production before any tenant resolution or DB check
+    if (pathname.startsWith('/v1/dev') && getEnv().NODE_ENV === 'production') {
+      throw new NotFoundException();
+    }
 
     // Check path exemption
     if (

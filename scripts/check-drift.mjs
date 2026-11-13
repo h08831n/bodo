@@ -5,7 +5,8 @@
  * Uses Prisma migrate diff and filters allowed partition noise using check-drift-filter.mjs.
  */
 
-import { execSync } from 'node:child_process';
+import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { filterDrift } from './check-drift-filter.mjs';
