@@ -74,11 +74,13 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
       PG_BIN_PATH: /usr/bin
+      PG_BIN_PATH: /usr/bin
     # Notice: API port 3000 is NOT exposed directly on host; only accessible through Nginx reverse proxy.
     volumes:
       - filestore:/data/filestore
       - backups:/data/backups
       - config:/data/config
+      - logs:/data/logs
     healthcheck:
       test: ['CMD', 'curl', '-f', 'http://localhost:3000/health/live']
       interval: 10s
@@ -113,10 +115,12 @@ services:
       DB_MANAGER_ENABLED: 'false'
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+      PG_BIN_PATH: /usr/bin
     volumes:
       - filestore:/data/filestore
       - backups:/data/backups
       - config:/data/config
+      - logs:/data/logs
 
   web:
     build:
@@ -141,3 +145,4 @@ volumes:
   filestore:
   backups:
   config:
+  logs:

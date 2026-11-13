@@ -6,6 +6,7 @@ import { HealthStatus } from '@bodo/contracts';
 import { buildDatabaseUrl } from '@bodo/utils';
 import { TenantClientManager } from '../infra/tenancy/tenant-client-manager';
 import { RedisService } from '../infra/redis/redis.service';
+import { VERSION_INFO } from '../config/version';
 
 @Injectable()
 export class HealthService {
@@ -21,6 +22,9 @@ export class HealthService {
       status: 'ok',
       uptime: Math.floor((Date.now() - this.startTime) / 1000),
       timestamp: new Date().toISOString(),
+      version: VERSION_INFO.version,
+      commit: VERSION_INFO.commit,
+      buildTime: VERSION_INFO.buildTime,
     };
   }
 
@@ -28,6 +32,7 @@ export class HealthService {
     const env = getEnv();
     let postgresStatus: 'up' | 'down' = 'down';
     let redisStatus: 'up' | 'down' = 'down';
+    let workerStatus: 'up' | 'down' = 'down';
 
     // 1. Postgres Ping using erp_app role on maintenance/postgres database
     const appUrl = buildDatabaseUrl({
@@ -53,10 +58,18 @@ export class HealthService {
       await pg.end().catch(() => {});
     }
 
-    // 2. Redis Ping
+    // 2. Redis Ping & Worker Heartbeat
     if (this.redisService) {
       const isPong = await this.redisService.ping();
       redisStatus = isPong ? 'up' : 'down';
+      if (isPong) {
+        try {
+          const hb = await this.redisService.getClient().get('worker:heartbeat');
+          workerStatus = hb ? 'up' : 'down';
+        } catch {
+          workerStatus = 'down';
+        }
+      }
     } else {
       const redis = new Redis(env.REDIS_URL, {
         password: env.REDIS_PASSWORD || undefined,
@@ -71,6 +84,8 @@ export class HealthService {
         const res = await redis.ping();
         if (res === 'PONG') {
           redisStatus = 'up';
+          const hb = await redis.get('worker:heartbeat');
+          workerStatus = hb ? 'up' : 'down';
         }
       } catch {
         redisStatus = 'down';
@@ -79,21 +94,31 @@ export class HealthService {
       }
     }
 
-    const isReady = postgresStatus === 'up' && redisStatus === 'up';
+    // Determine readiness and overall status
+    const criticalReady = postgresStatus === 'up' && redisStatus === 'up';
+    let overallStatus: 'ok' | 'degraded' | 'error' = 'error';
+
+    if (criticalReady) {
+      overallStatus = workerStatus === 'up' ? 'ok' : 'degraded';
+    }
 
     const clientStats = this.clientManager
       ? this.clientManager.stats()
       : { open: 0, maxClients: env.TENANT_MAX_CLIENTS, activeLeases: 0 };
 
     return {
-      isReady,
+      isReady: criticalReady,
       data: {
-        status: isReady ? 'ok' : 'error',
+        status: overallStatus,
         uptime: Math.floor((Date.now() - this.startTime) / 1000),
         timestamp: new Date().toISOString(),
+        version: VERSION_INFO.version,
+        commit: VERSION_INFO.commit,
+        buildTime: VERSION_INFO.buildTime,
         checks: {
           postgres: postgresStatus,
           redis: redisStatus,
+          worker: workerStatus,
         },
         tenantClients: clientStats,
       },
