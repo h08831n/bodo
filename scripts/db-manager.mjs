@@ -6,7 +6,19 @@ import { loadRootEnv } from './db-env.mjs';
 
 loadRootEnv();
 
-const API_BASE = process.env.API_URL || `http://127.0.0.1:${process.env.PORT || 3000}`;
+async function resolveApiBase(specifiedUrl) {
+  if (specifiedUrl) return specifiedUrl;
+  if (process.env.API_URL) return process.env.API_URL;
+  try {
+    const res = await fetch('http://127.0.0.1:3000/health/live', { signal: AbortSignal.timeout(600) });
+    if (res.ok) return 'http://127.0.0.1:3000';
+  } catch {}
+  try {
+    const res = await fetch('http://127.0.0.1/health/live', { signal: AbortSignal.timeout(600) });
+    if (res.ok) return 'http://127.0.0.1';
+  } catch {}
+  return `http://127.0.0.1:${process.env.PORT || 3000}`;
+}
 
 function printHelp() {
   console.log(`
@@ -52,8 +64,9 @@ Options:
 }
 
 function promptSecure(promptText = 'Password: ') {
-  if (process.env.MASTER_PASSWORD && promptText.includes('Master')) {
-    return Promise.resolve(process.env.MASTER_PASSWORD);
+  const envMaster = process.env.MASTER_PASSWORD || process.env.MASTER_PASSWORD_INITIAL;
+  if (envMaster && promptText.includes('Master')) {
+    return Promise.resolve(envMaster);
   }
   return new Promise((resolve) => {
     if (!process.stdin.isTTY) {
@@ -133,7 +146,7 @@ class AdminClient {
       throw new Error(data.message || `Login failed with HTTP ${res.status}`);
     }
 
-    this.token = data.accessToken;
+    this.token = data.token || data.accessToken;
     return this.token;
   }
 
@@ -158,7 +171,8 @@ class AdminClient {
       body: fetchBody,
     });
 
-    if (res.headers.get('content-type')?.includes('application/octet-stream')) {
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('application/octet-stream') || ct.includes('application/zip')) {
       return res;
     }
 
@@ -219,12 +233,13 @@ async function main() {
     return;
   }
 
-  let baseUrl = API_BASE;
+  let specifiedUrl = null;
   const urlIdx = args.indexOf('--url');
   if (urlIdx !== -1 && args[urlIdx + 1]) {
-    baseUrl = args[urlIdx + 1];
+    specifiedUrl = args[urlIdx + 1];
     args.splice(urlIdx, 2);
   }
+  const baseUrl = await resolveApiBase(specifiedUrl);
 
   const command = args[0];
   const commandArgs = args.slice(1);
@@ -331,7 +346,7 @@ async function main() {
         console.error('Usage: pnpm db:manager backup <name>');
         process.exit(1);
       }
-      const res = await client.request('POST', `/v1/admin/databases/${name}/backup`);
+      const res = await client.request('POST', `/v1/admin/databases/${name}/backups`);
       console.log(`Backup job queued. Job ID: ${res.jobId}`);
       if (hasWatch) {
         await watchJob(client, res.jobId);
@@ -353,7 +368,7 @@ async function main() {
       }
       console.table(
         backups.map((b) => ({
-          Filename: b.filename,
+          Filename: b.file || b.filename,
           Size: `${(b.sizeBytes / 1024 / 1024).toFixed(2)} MB`,
           Schema: b.schemaVersion || 'unknown',
           'Created At': new Date(b.createdAt).toLocaleString(),
@@ -397,8 +412,9 @@ async function main() {
       const blob = new Blob([fileBuffer], { type: 'application/zip' });
       const formData = new FormData();
       formData.append('file', blob, path.basename(resolvedZip));
+      formData.append('newName', name);
 
-      const res = await client.request('POST', `/v1/admin/databases/${name}/restore`, formData, true);
+      const res = await client.request('POST', '/v1/admin/databases/restore', formData, true);
       console.log(`Restore job queued. Job ID: ${res.jobId}`);
       if (hasWatch) {
         await watchJob(client, res.jobId);

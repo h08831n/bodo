@@ -1,11 +1,12 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { isValidDatabaseName } from '@bodo/utils';
 import {
   PgToolsDriver,
   PgDumpOptions,
   PgRestoreOptions,
+  isValidPgToolsDatabaseName,
   scrubSensitive,
 } from './pg-tools.interface';
 
@@ -53,7 +54,7 @@ export class DockerPgToolsDriver implements PgToolsDriver {
   }
 
   async dump(options: PgDumpOptions): Promise<{ bytesWritten: number }> {
-    if (!isValidDatabaseName(options.database)) {
+    if (!isValidPgToolsDatabaseName(options.database)) {
       throw new Error(`Invalid database name for pg_dump: "${options.database}"`);
     }
     this.validateContainerName(this.containerName);
@@ -90,19 +91,23 @@ export class DockerPgToolsDriver implements PgToolsDriver {
     child.stderr.on('data', (d) => (stderr += d.toString()));
 
     let bytesWritten = 0;
-    child.stdout.on('data', (chunk) => {
-      bytesWritten += chunk.length;
+    const counter = new Transform({
+      transform(chunk, _encoding, callback) {
+        bytesWritten += chunk.length;
+        callback(null, chunk);
+      },
     });
 
     const streamPromises: Promise<unknown>[] = [];
 
     if (options.destinationStream) {
-      streamPromises.push(pipeline(child.stdout, options.destinationStream));
+      streamPromises.push(pipeline(child.stdout, counter, options.destinationStream));
     } else if (options.outputFilePath) {
       const outStream = fs.createWriteStream(options.outputFilePath);
-      streamPromises.push(pipeline(child.stdout, outStream));
+      streamPromises.push(pipeline(child.stdout, counter, outStream));
     } else {
-      child.stdout.resume();
+      counter.resume();
+      streamPromises.push(pipeline(child.stdout, counter));
     }
 
     const exitPromise = new Promise<void>((resolve, reject) => {
@@ -126,7 +131,7 @@ export class DockerPgToolsDriver implements PgToolsDriver {
   }
 
   async restore(options: PgRestoreOptions): Promise<void> {
-    if (!isValidDatabaseName(options.database)) {
+    if (!isValidPgToolsDatabaseName(options.database)) {
       throw new Error(`Invalid database name for pg_restore: "${options.database}"`);
     }
     this.validateContainerName(this.containerName);

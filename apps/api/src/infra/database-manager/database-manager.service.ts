@@ -613,6 +613,16 @@ export class DatabaseManagerService implements OnApplicationBootstrap {
       throw new NotFoundException(`Database "${dbName}" not found`);
     }
 
+    // 1. Ensure ALLOW_CONNECTIONS is true FIRST so connections are unblocked
+    const pClient = this.getPostgresClient('provisioner');
+    await pClient.connect();
+    try {
+      await pClient.query(`ALTER DATABASE "${dbName}" WITH ALLOW_CONNECTIONS true;`);
+    } finally {
+      await pClient.end().catch(() => {});
+    }
+
+    // 2. Check and resolve any failed migration in _prisma_migrations
     const env = getEnv();
     const client = new PgClient({
       connectionString: buildDatabaseUrl({
@@ -624,10 +634,10 @@ export class DatabaseManagerService implements OnApplicationBootstrap {
       }),
     });
 
-    await client.connect();
     let migrationToRollback = migration;
 
     try {
+      await client.connect();
       if (!migrationToRollback) {
         const res = await client.query<{ migration_name: string }>(`
           SELECT migration_name
@@ -640,26 +650,19 @@ export class DatabaseManagerService implements OnApplicationBootstrap {
       }
 
       if (migrationToRollback) {
-        await client.query(
-          `
-          UPDATE _prisma_migrations
-          SET rolled_back_at = NOW()
-          WHERE migration_name = $1 AND rolled_back_at IS NULL;
-        `,
-          [migrationToRollback],
-        );
+        // Resolve failed migration using prisma migrate resolve --rolled-back
+        await this.migrationRunner.resolveRolledBack(dbName, migrationToRollback);
       }
+    } catch (err: unknown) {
+      this.logger.warn(`Could not check/rollback migrations in "${dbName}": ${err}`);
     } finally {
       await client.end().catch(() => {});
     }
 
-    // Ensure ALLOW_CONNECTIONS is true
-    const pClient = this.getPostgresClient('provisioner');
-    await pClient.connect();
-    try {
-      await pClient.query(`ALTER DATABASE "${dbName}" WITH ALLOW_CONNECTIONS true;`);
-    } finally {
-      await pClient.end().catch(() => {});
+    // 3. If tenant was in durable maintenance due to migration_failed, clear it
+    const mState = await this.maintenanceService.get(dbName);
+    if (mState.inMaintenance && mState.reason === 'migration_failed') {
+      await this.maintenanceService.clear(dbName);
     }
 
     return {
@@ -986,29 +989,61 @@ export class DatabaseManagerService implements OnApplicationBootstrap {
 
     await client.connect();
     try {
-      // Seed 4 Currencies
+      // 1. Currencies (IRR, IRT, USD, EUR)
       await client.query(`
-        INSERT INTO currencies (code, name, symbol, decimals, is_base, is_active, created_at, updated_at)
+        INSERT INTO currencies (code, name, symbol, decimals, sort_order, is_active)
         VALUES 
-          ('IRR', 'ریال ایران', '﷼', 0, true, true, NOW(), NOW()),
-          ('USD', 'دلار آمریکا', '$', 2, false, true, NOW(), NOW()),
-          ('EUR', 'یورو', '€', 2, false, true, NOW(), NOW()),
-          ('AED', 'درهم امارات', 'د.إ', 2, false, true, NOW(), NOW())
+          ('IRR', 'ریال ایران', 'IRR', 0, 1, true),
+          ('IRT', 'تومان ایران', 'IRT', 0, 2, true),
+          ('USD', 'دلار آمریکا', '$', 2, 3, true),
+          ('EUR', 'یورو', '€', 2, 4, true)
         ON CONFLICT (code) DO NOTHING;
       `);
 
-      // Seed 7 Lost Reasons
+      // 2. Company Profile
       await client.query(`
-        INSERT INTO lost_reasons (name, code, is_active, created_at, updated_at)
-        VALUES
-          ('قیمت بالا', 'PRICE_HIGH', true, NOW(), NOW()),
-          ('عدم موجودی کالا', 'OUT_OF_STOCK', true, NOW(), NOW()),
-          ('زمان تحویل طولانی', 'LONG_DELIVERY', true, NOW(), NOW()),
-          ('کیفیت نامناسب', 'POOR_QUALITY', true, NOW(), NOW()),
-          ('شرایط پرداخت نامناسب', 'PAYMENT_TERMS', true, NOW(), NOW()),
-          ('انصراف مشتری', 'CUSTOMER_CANCELED', true, NOW(), NOW()),
-          ('سایر دلایل', 'OTHER', true, NOW(), NOW())
-        ON CONFLICT (code) DO NOTHING;
+        INSERT INTO company_profile (id, name, default_currency_code, updated_at)
+        VALUES (1, '', 'IRR', NOW())
+        ON CONFLICT (id) DO NOTHING;
+      `);
+
+      // 3. System Administrator Group (مدیر سیستم)
+      const groupId = crypto.randomUUID();
+      await client.query(
+        `
+        INSERT INTO groups (id, name, description, is_system, updated_at)
+        VALUES ($1, 'مدیر سیستم', 'گروه راهبران ارشد با دسترسی کامل سیستمی', true, NOW())
+        ON CONFLICT (name) DO NOTHING;
+      `,
+        [groupId],
+      );
+
+      // 4. Lost Reasons (7 Persian reasons)
+      const lostReasons: Array<[string, number]> = [
+        ['قیمت بالا', 1],
+        ['رقیب قیمت کمتری داد', 2],
+        ['نیاز مشتری منتفی شد', 3],
+        ['زمان تحویل مناسب نبود', 4],
+        ['شرایط پرداخت مناسب نبود', 5],
+        ['عدم پاسخگویی مشتری', 6],
+        ['سایر', 7],
+      ];
+      for (const [name, sortOrder] of lostReasons) {
+        await client.query(
+          `
+          INSERT INTO lost_reasons (id, name, applies_to, sort_order, is_active, updated_at)
+          VALUES ($1, $2, 'BOTH', $3, true, NOW())
+          ON CONFLICT (name) DO NOTHING;
+        `,
+          [crypto.randomUUID(), name, sortOrder],
+        );
+      }
+
+      // 5. System Settings (neutralized: false)
+      await client.query(`
+        INSERT INTO system_settings (key, value, updated_at)
+        VALUES ('neutralized', 'false'::jsonb, NOW())
+        ON CONFLICT (key) DO NOTHING;
       `);
     } finally {
       await client.end().catch(() => {});
@@ -1035,41 +1070,34 @@ export class DatabaseManagerService implements OnApplicationBootstrap {
       const passwordHash = await hash(data.adminPassword);
       const userId = crypto.randomUUID();
 
+      // Find 'مدیر سیستم' Group
+      const grpRes = await client.query<{ id: string }>(
+        `SELECT id FROM groups WHERE name = 'مدیر سیستم' LIMIT 1;`,
+      );
+      const groupId = grpRes.rows[0]?.id;
+
       // Create Admin User
       await client.query(
         `
-        INSERT INTO users (id, username, full_name, password_hash, is_active, must_change_password, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, true, false, NOW(), NOW());
+        INSERT INTO users (id, type, username, full_name, password_hash, status, must_change_password, updated_at)
+        VALUES ($1, 'INTERNAL', $2, $3, $4, 'ACTIVE', false, NOW());
       `,
         [userId, data.adminUsername.toLowerCase(), data.adminFullName, passwordHash],
       );
 
-      // Fetch or Create 'مدیر سیستم' Group
-      let groupId: string;
-      const grpRes = await client.query<{ id: string }>(
-        `SELECT id FROM groups WHERE name = 'مدیر سیستم' LIMIT 1;`,
-      );
-      if (grpRes.rows[0]?.id) {
-        groupId = grpRes.rows[0].id;
-      } else {
-        groupId = crypto.randomUUID();
+      // Assign User to Group
+      if (groupId) {
         await client.query(
-          `INSERT INTO groups (id, name, description, is_system, created_at, updated_at) VALUES ($1, 'مدیر سیستم', 'مدیران کل سیستم', true, NOW(), NOW());`,
-          [groupId],
+          `INSERT INTO group_members (group_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING;`,
+          [groupId, userId],
         );
       }
 
-      // Assign User to Group
-      await client.query(
-        `INSERT INTO user_groups (user_id, group_id) VALUES ($1, $2) ON CONFLICT DO NOTHING;`,
-        [userId, groupId],
-      );
-
-      // Insert audit log
+      // Audit Log
       await client.query(
         `
-        INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, source, ip_address, created_at)
-        VALUES ($1, $2, 'CREATE', 'user', $3, 'SYSTEM', '127.0.0.1', NOW());
+        INSERT INTO audit_logs (id, actor_id, action, entity_type, entity_id, source, occurred_at)
+        VALUES ($1, $2, 'CREATE', 'user', $3, 'SYSTEM', NOW());
       `,
         [crypto.randomUUID(), userId, userId],
       );

@@ -62,7 +62,7 @@ set "WORKER_STATUS=down"
 set "APP_VERSION=unknown"
 set "APP_COMMIT=unknown"
 
-for /f "tokens=1,2,3,4,5,6 delims=|" %%a in ('node -e "fetch('http://localhost/health/ready').then(r=>r.json()).then(d=>console.log([d.status,d.checks?.postgres,d.checks?.redis,d.checks?.worker,d.version,d.commit].join('|'))).catch(()=>console.log('unreachable'))" 2^>nul') do (
+for /f "tokens=1,2,3,4,5,6 delims=|" %%a in ('node -e "fetch(process.argv[1]).then(r=>r.json()).then(d=>console.log([d.status,d.checks?.postgres,d.checks?.redis,d.checks?.worker,d.version,d.commit].join('|'))).catch(()=>console.log(process.argv[2]))" http://localhost/health/ready unreachable 2^>nul') do (
     set "HEALTH_STATUS=%%a"
     set "PG_STATUS=%%b"
     set "REDIS_STATUS=%%c"
@@ -72,8 +72,8 @@ for /f "tokens=1,2,3,4,5,6 delims=|" %%a in ('node -e "fetch('http://localhost/h
 )
 
 if "!HEALTH_STATUS!"=="ok" (
-    echo [INFO] All services are healthy (Postgres: !PG_STATUS!, Redis: !REDIS_STATUS!, Worker: !WORKER_STATUS!).
-    echo [INFO] Application Version: !APP_VERSION! (Commit: !APP_COMMIT!)
+    echo [INFO] All services are healthy [Postgres: !PG_STATUS!, Redis: !REDIS_STATUS!, Worker: !WORKER_STATUS!].
+    echo [INFO] Application Version: !APP_VERSION! [Commit: !APP_COMMIT!]
     goto ready_success
 )
 
@@ -93,7 +93,7 @@ set /a health_sec+=2
 if !health_sec! geq 90 (
     echo.
     echo [ERROR] ========================================================
-    echo [ERROR] سیستم بالا آمد ولی آماده نیست! (Ready probe failed)
+    echo [ERROR] سیستم بالا آمد ولی آماده نیست! [Ready probe failed]
     echo [ERROR] وضعیت فعلی: !HEALTH_STATUS!
     echo [ERROR] جزئیات: Postgres: [!PG_STATUS!], Redis: [!REDIS_STATUS!], Worker: [!WORKER_STATUS!]
     echo [ERROR] راهنما: با status.bat وضعیت کانتینرها و با logs.bat لاگ خطا را بررسی کنید.

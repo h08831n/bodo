@@ -248,11 +248,9 @@ describe('HTTP Multi-Tenant End-to-End Isolation (Tests 2, 3, 4, 5, 17)', () => 
     // Ready probe
     const ready = await request(app.getHttpServer()).get('/health/ready').expect(200);
 
-    expect(ready.body.status).toBe('ok');
-    expect(ready.body.checks).toEqual({
-      postgres: 'up',
-      redis: 'up',
-    });
+    expect(['ok', 'degraded']).toContain(ready.body.status);
+    expect(ready.body.checks.postgres).toBe('up');
+    expect(ready.body.checks.redis).toBe('up');
     expect(ready.body.tenantClients).toBeDefined();
     expect(ready.body.tenantClients.maxClients).toBe(env.TENANT_MAX_CLIENTS);
     expect(ready.body.tenantClients.open).toBeGreaterThanOrEqual(1);

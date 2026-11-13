@@ -36,12 +36,7 @@ for /f %%i in ('docker compose --env-file "%PROJECT_ROOT%\.env" -f "%PROJECT_ROO
     set "HAS_RUNNING=1"
 )
 
-if not defined HAS_RUNNING (
-    echo [INFO] هیچ سرویسی در حال اجرا نبود. (No running services were found)
-    echo.
-    pause
-    exit /b 0
-)
+if not defined HAS_RUNNING goto no_running
 
 :: 1. Stop production compose stack
 echo [INFO] Stopping production containers...
@@ -60,5 +55,11 @@ echo  Database volumes, configurations, and data are intact.
 echo ========================================================
 echo.
 
+pause
+exit /b 0
+
+:no_running
+echo [INFO] No running services were found.
+echo.
 pause
 exit /b 0

@@ -112,14 +112,12 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
     // Clean up any leftovers from previous test runs
     for (const db of [testDbName, duplicateDbName, restoreDbName]) {
       await superuserPool
-        .query(
-          `
-        SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1;
-        DROP DATABASE IF EXISTS "${db}";
-      `,
-          [db],
-        )
+        .query(`ALTER DATABASE "${db}" WITH ALLOW_CONNECTIONS true;`)
         .catch(() => {});
+      await superuserPool
+        .query(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1;`, [db])
+        .catch(() => {});
+      await superuserPool.query(`DROP DATABASE IF EXISTS "${db}" WITH (FORCE);`).catch(() => {});
     }
   });
 
@@ -128,14 +126,12 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
 
     for (const db of [testDbName, duplicateDbName, restoreDbName]) {
       await superuserPool
-        .query(
-          `
-        SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1;
-        DROP DATABASE IF EXISTS "${db}";
-      `,
-          [db],
-        )
+        .query(`ALTER DATABASE "${db}" WITH ALLOW_CONNECTIONS true;`)
         .catch(() => {});
+      await superuserPool
+        .query(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1;`, [db])
+        .catch(() => {});
+      await superuserPool.query(`DROP DATABASE IF EXISTS "${db}" WITH (FORCE);`).catch(() => {});
     }
 
     await superuserPool.end().catch(() => {});
@@ -262,8 +258,8 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
 
       // Verify erp_app can insert (DML permission)
       await appClient.query(`
-        INSERT INTO currencies (id, code, name, symbol, decimals, is_active, created_at, updated_at)
-        VALUES ('cur_test_dup', 'DUP', 'Duplicate Test', 'D', 2, true, NOW(), NOW());
+        INSERT INTO currencies (code, name, symbol, decimals, sort_order, is_active)
+        VALUES ('DUP', 'Duplicate Test', 'D', 2, 99, true);
       `);
       const afterInsert = await appClient.query('SELECT count(*) FROM currencies;');
       expect(parseInt(afterInsert.rows[0].count, 10)).toBe(5);
@@ -310,13 +306,74 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
     }
   });
 
-  it('Test 15: Leaked ALLOW_CONNECTIONS false detection on boot and repair endpoint', async () => {
+  it('Test 12: Resolves failed migration in _prisma_migrations and unblocks maintenance via repair', async () => {
+    if (!isDbConnected) return;
+
+    // Simulate a failed migration record in _prisma_migrations
+    const migratorClient = new pg.Client({
+      connectionString: buildDatabaseUrl({
+        host,
+        port,
+        user: 'erp_migrator',
+        password: env.ERP_MIGRATOR_PASSWORD,
+        database: duplicateDbName,
+      }),
+    });
+    await migratorClient.connect();
+    try {
+      await migratorClient.query(`
+        INSERT INTO _prisma_migrations (id, checksum, migration_name, logs, started_at)
+        VALUES ('test_failed_mig_id', 'mock_checksum', '9999_failed_upgrade', 'Simulated failure', NOW());
+      `);
+    } finally {
+      await migratorClient.end();
+    }
+
+    // Put tenant into durable migration_failed maintenance
+    await maintenanceService.set(duplicateDbName, {
+      reason: 'migration_failed',
+      durable: true,
+    });
+    let state = await maintenanceService.get(duplicateDbName);
+    expect(state.inMaintenance).toBe(true);
+    expect(state.reason).toBe('migration_failed');
+
+    // Run repair endpoint
+    const repairRes = await dbManager.repairDatabase('test_mgr_dup', true);
+    expect(repairRes.rolledBackMigration).toBe('9999_failed_upgrade');
+
+    // Verify _prisma_migrations marked as rolled back
+    const verifyClient = new pg.Client({
+      connectionString: buildDatabaseUrl({
+        host,
+        port,
+        user: 'erp_migrator',
+        password: env.ERP_MIGRATOR_PASSWORD,
+        database: duplicateDbName,
+      }),
+    });
+    await verifyClient.connect();
+    try {
+      const migCheck = await verifyClient.query<{ rolled_back_at: string | null }>(`
+        SELECT rolled_back_at FROM _prisma_migrations WHERE migration_name = '9999_failed_upgrade';
+      `);
+      expect(migCheck.rows[0]?.rolled_back_at).not.toBeNull();
+    } finally {
+      await verifyClient.end();
+    }
+
+    // Verify durable maintenance mode cleared
+    state = await maintenanceService.get(duplicateDbName);
+    expect(state.inMaintenance).toBe(false);
+  });
+
+  it('Test 15: Worker crash repair - unblocks leaked ALLOW_CONNECTIONS false and detects orphans', async () => {
     if (!isDbConnected) return;
 
     // Simulate worker crash leaving datallowconn = false
     await superuserPool.query(`ALTER DATABASE "${duplicateDbName}" WITH ALLOW_CONNECTIONS false;`);
 
-    // Check orphan / locked DB detection
+    // Check orphan / locked DB detection on boot
     const orphanCheck = await dbManager.checkOrphans();
     expect(orphanCheck.lockedDbs).toContain(duplicateDbName);
 

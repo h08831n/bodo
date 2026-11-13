@@ -49,7 +49,7 @@ set "PG_STATUS=down"
 set "REDIS_STATUS=down"
 set "WORKER_STATUS=down"
 
-for /f "tokens=1,2,3,4 delims=|" %%a in ('node -e "fetch('http://localhost/health/ready').then(r=>r.json()).then(d=>console.log([d.status,d.checks?.postgres,d.checks?.redis,d.checks?.worker].join('|'))).catch(()=>console.log('unreachable'))" 2^>nul') do (
+for /f "tokens=1,2,3,4 delims=|" %%a in ('node -e "fetch(process.argv[1]).then(r=>r.json()).then(d=>console.log([d.status,d.checks?.postgres,d.checks?.redis,d.checks?.worker].join('|'))).catch(()=>console.log(process.argv[2]))" http://localhost/health/ready unreachable 2^>nul') do (
     set "HEALTH_STATUS=%%a"
     set "PG_STATUS=%%b"
     set "REDIS_STATUS=%%c"
@@ -57,21 +57,27 @@ for /f "tokens=1,2,3,4 delims=|" %%a in ('node -e "fetch('http://localhost/healt
 )
 
 if "!HEALTH_STATUS!"=="ok" (
-    echo   [OK] System is healthy and ready. (Postgres: !PG_STATUS!, Redis: !REDIS_STATUS!, Worker: !WORKER_STATUS!)
-) else if "!HEALTH_STATUS!"=="degraded" (
-    echo   [WARNING] سیستم در وضعیت Degraded است. ورکر قطع است (Worker: !WORKER_STATUS!).
-    echo             عملیات پس‌زمینه و مدیریت دیتابیس در دسترس نیستند.
-) else if "!HEALTH_STATUS!"=="unreachable" (
-    echo   (Endpoint not reachable on port 80 - production stack may be stopped)
-) else (
-    echo   [ERROR] سیستم آماده نیست! (Status: !HEALTH_STATUS!, Postgres: !PG_STATUS!, Redis: !REDIS_STATUS!)
+    echo   [OK] System is healthy and ready. [Postgres: !PG_STATUS!, Redis: !REDIS_STATUS!, Worker: !WORKER_STATUS!]
+    goto after_health_a
 )
+if "!HEALTH_STATUS!"=="degraded" (
+    echo   [WARNING] سیستم در وضعیت Degraded است. ورکر قطع است [Worker: !WORKER_STATUS!].
+    echo             عملیات پس‌زمینه و مدیریت دیتابیس در دسترس نیستند.
+    goto after_health_a
+)
+if "!HEALTH_STATUS!"=="unreachable" (
+    echo   [Endpoint not reachable on port 80 - production stack may be stopped]
+    goto after_health_a
+)
+echo   [ERROR] سیستم آماده نیست! [Status: !HEALTH_STATUS!, Postgres: !PG_STATUS!, Redis: !REDIS_STATUS!]
+
+:after_health_a
 echo.
 
 echo [B] Dev API Direct Port (http://localhost:3000/health/ready):
-curl -s -i http://localhost:3000/health/ready 2>nul
-if %errorlevel% neq 0 (
-    echo   (Endpoint not reachable on port 3000 - dev API server may be stopped)
+curl -s -i http://localhost:3000/health/ready >nul 2>&1
+if !errorlevel! neq 0 (
+    echo   [Endpoint not reachable on port 3000 - dev API server may be stopped]
 )
 echo.
 

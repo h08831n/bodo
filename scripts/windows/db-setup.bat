@@ -49,6 +49,15 @@ if %errorlevel% neq 0 (
     )
 )
 
+:: Ensure isolated development database containers are running
+echo [INFO] Ensuring development database containers are running...
+docker compose --env-file "%PROJECT_ROOT%\.env" -f "%PROJECT_ROOT%\infra\docker-compose.dev.yml" up -d
+if %errorlevel% neq 0 (
+    echo [ERROR] Failed to start development containers.
+    pause
+    exit /b 1
+)
+
 :: Run idempotent db:setup-dev
 echo [INFO] Executing pnpm db:setup-dev...
 cd /d "%PROJECT_ROOT%"

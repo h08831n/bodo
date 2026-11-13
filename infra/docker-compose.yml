@@ -74,6 +74,10 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
       PG_BIN_PATH: /usr/bin
+      BACKUP_DIR: /data/backups
+      FILESTORE_DIR: /data/filestore
+      CONFIG_DIR: /data/config
+      LOGS_DIR: /data/logs
     # Notice: API port 3000 is NOT exposed directly on host; only accessible through Nginx reverse proxy.
     volumes:
       - filestore:/data/filestore
@@ -115,6 +119,10 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
       PG_BIN_PATH: /usr/bin
+      BACKUP_DIR: /data/backups
+      FILESTORE_DIR: /data/filestore
+      CONFIG_DIR: /data/config
+      LOGS_DIR: /data/logs
     volumes:
       - filestore:/data/filestore
       - backups:/data/backups
@@ -134,7 +142,7 @@ services:
     ports:
       - '${WEB_PORT:-80}:80'
     healthcheck:
-      test: ['CMD-SHELL', 'wget -q --spider http://localhost/ || exit 1']
+      test: ['CMD-SHELL', 'wget -q --spider http://127.0.0.1/ || exit 1']
       interval: 10s
       timeout: 5s
       retries: 3

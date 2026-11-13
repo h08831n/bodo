@@ -98,10 +98,15 @@ export class ZipService {
    * Extracts and strictly validates a backup zip file against Zip-Slip, Zip-Bomb,
    * path traversal, null bytes, absolute paths, and symlinks.
    */
-  async extractAndValidate(zipFilePath: string, destDir: string): Promise<ExtractedBackup> {
+  async extractAndValidate(
+    zipFilePath: string,
+    destDir: string,
+    options?: { maxEntries?: number; maxUncompressedBytes?: number },
+  ): Promise<ExtractedBackup> {
     const env = getEnv();
-    const maxEntries = env.MAX_RESTORE_ENTRIES;
-    const maxUncompressedBytes = env.MAX_RESTORE_UPLOAD_MB * 1024 * 1024 * 10; // 10x upload size limit
+    const maxEntries = options?.maxEntries ?? env.MAX_RESTORE_ENTRIES;
+    const maxUncompressedBytes =
+      options?.maxUncompressedBytes ?? env.MAX_RESTORE_UNCOMPRESSED_MB * 1024 * 1024;
     const normalizedDest = path.resolve(destDir);
     const destPrefix = normalizedDest + path.sep;
 
@@ -217,7 +222,7 @@ export class ZipService {
             zipfile.close();
             return reject(
               new ZipSecurityError(
-                `Zip uncompressed content exceeds size limit (${env.MAX_RESTORE_UPLOAD_MB * 10}MB)`,
+                `Zip uncompressed content exceeds size limit (${env.MAX_RESTORE_UNCOMPRESSED_MB}MB)`,
                 'ZIP_BOMB_DETECTED',
               ),
             );
@@ -225,7 +230,10 @@ export class ZipService {
 
           if (entry.compressedSize > 0) {
             const ratio = entry.uncompressedSize / entry.compressedSize;
-            if (ratio > 100 && entry.uncompressedSize > 10 * 1024 * 1024) {
+            // Only apply compression ratio check when the entry itself is at least 100MB
+            // to allow legitimately highly compressible empty tables / text dumps under 100MB
+            const MIN_ENTRY_SIZE_FOR_RATIO_CHECK = 100 * 1024 * 1024; // 100MB
+            if (ratio > 100 && entry.uncompressedSize >= MIN_ENTRY_SIZE_FOR_RATIO_CHECK) {
               zipfile.close();
               return reject(
                 new ZipSecurityError(

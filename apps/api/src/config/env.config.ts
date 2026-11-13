@@ -76,6 +76,10 @@ export const EnvSchema = z.object({
     .string()
     .transform((val) => parseInt(val, 10))
     .default('100'),
+  MAX_RESTORE_UNCOMPRESSED_MB: z
+    .string()
+    .transform((val) => parseInt(val, 10))
+    .default('20480'),
   MAX_RESTORE_ENTRIES: z
     .string()
     .transform((val) => parseInt(val, 10))
@@ -118,4 +122,8 @@ export function getEnv(): EnvConfig {
   }
   parsedEnv = validateEnv(process.env);
   return parsedEnv;
+}
+
+export function resetEnv(): void {
+  parsedEnv = null;
 }

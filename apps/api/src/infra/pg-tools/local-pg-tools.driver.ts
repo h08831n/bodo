@@ -2,11 +2,11 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { isValidDatabaseName } from '@bodo/utils';
 import {
   PgToolsDriver,
   PgDumpOptions,
   PgRestoreOptions,
+  isValidPgToolsDatabaseName,
   scrubSensitive,
 } from './pg-tools.interface';
 
@@ -53,7 +53,7 @@ export class LocalPgToolsDriver implements PgToolsDriver {
   }
 
   async dump(options: PgDumpOptions): Promise<{ bytesWritten: number }> {
-    if (!isValidDatabaseName(options.database)) {
+    if (!isValidPgToolsDatabaseName(options.database)) {
       throw new Error(`Invalid database name for pg_dump: "${options.database}"`);
     }
 
@@ -119,7 +119,7 @@ export class LocalPgToolsDriver implements PgToolsDriver {
   }
 
   async restore(options: PgRestoreOptions): Promise<void> {
-    if (!isValidDatabaseName(options.database)) {
+    if (!isValidPgToolsDatabaseName(options.database)) {
       throw new Error(`Invalid database name for pg_restore: "${options.database}"`);
     }
 

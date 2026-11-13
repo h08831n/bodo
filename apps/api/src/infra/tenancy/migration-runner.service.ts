@@ -124,16 +124,23 @@ export class MigrationRunnerService {
    * Upgrades a database schema by running prisma migrate deploy using erp_migrator credentials.
    * Enables durable maintenance during upgrade. If failed, remains in durable maintenance.
    */
-  async upgrade(db: string, options?: { schemaPath?: string }): Promise<UpgradeResult> {
+  async upgrade(
+    db: string,
+    options?: { schemaPath?: string; skipMaintenance?: boolean },
+  ): Promise<UpgradeResult> {
     const schema = options?.schemaPath || this.defaultSchemaPath;
+    const isTempDb = db.startsWith('erp_tmp_');
+    const shouldManageMaintenance = !isTempDb && !options?.skipMaintenance;
 
     this.logger.log(`Starting schema upgrade for database "${db}"...`);
 
-    // 1. Enable durable maintenance mode
-    await this.maintenanceService.set(db, {
-      reason: 'migration_in_progress',
-      durable: true,
-    });
+    // 1. Enable durable maintenance mode for real tenant databases
+    if (shouldManageMaintenance) {
+      await this.maintenanceService.set(db, {
+        reason: 'migration_in_progress',
+        durable: true,
+      });
+    }
 
     const migratorUrl = buildDatabaseUrl({
       host: this.host,
@@ -169,11 +176,13 @@ export class MigrationRunnerService {
       const errMsg = `Prisma migration failed with exit code ${res.status}: ${output.slice(-500)}`;
       this.logger.error(`Migration upgrade FAILED for "${db}": ${errMsg}`);
 
-      // Keep database in durable maintenance mode
-      await this.maintenanceService.set(db, {
-        reason: 'migration_failed',
-        durable: true,
-      });
+      // Keep database in durable maintenance mode if not temporary
+      if (shouldManageMaintenance) {
+        await this.maintenanceService.set(db, {
+          reason: 'migration_failed',
+          durable: true,
+        });
+      }
 
       return {
         db,
@@ -184,7 +193,9 @@ export class MigrationRunnerService {
     }
 
     // 2. Clear maintenance mode on success
-    await this.maintenanceService.clear(db);
+    if (shouldManageMaintenance) {
+      await this.maintenanceService.clear(db);
+    }
     this.logger.log(`Schema upgrade successfully applied to "${db}".`);
 
     return {
@@ -192,6 +203,80 @@ export class MigrationRunnerService {
       success: true,
       output,
     };
+  }
+
+  /**
+   * Resolves a failed migration in a tenant database using `prisma migrate resolve --rolled-back`
+   * or direct SQL update if prisma CLI is not directly accessible.
+   */
+  async resolveRolledBack(
+    db: string,
+    migrationName: string,
+    options?: { schemaPath?: string },
+  ): Promise<{ success: boolean; output: string }> {
+    const schema = options?.schemaPath || this.defaultSchemaPath;
+    const migratorUrl = buildDatabaseUrl({
+      host: this.host,
+      port: this.port,
+      user: 'erp_migrator',
+      password: this.migratorPassword,
+      database: db,
+    });
+
+    let prismaCli = path.resolve(process.cwd(), 'apps/api/node_modules/prisma/build/index.js');
+    if (!fs.existsSync(prismaCli)) {
+      prismaCli = path.resolve(process.cwd(), 'node_modules/prisma/build/index.js');
+    }
+
+    if (fs.existsSync(prismaCli)) {
+      const res = spawnSync(
+        process.execPath,
+        [prismaCli, 'migrate', 'resolve', `--rolled-back=${migrationName}`, `--schema=${schema}`],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            DATABASE_URL: migratorUrl,
+          },
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+          shell: false,
+        },
+      );
+
+      const output = (res.stdout || '') + (res.stderr || '');
+      if (res.status === 0) {
+        this.logger.log(`Prisma migration "${migrationName}" marked as rolled back for "${db}".`);
+        return { success: true, output };
+      }
+      this.logger.warn(
+        `prisma migrate resolve exited with code ${res.status}: ${output}. Falling back to SQL update.`,
+      );
+    }
+
+    // Direct SQL fallback if CLI could not resolve
+    const pool = new pg.Pool({
+      host: this.host,
+      port: this.port,
+      user: 'erp_migrator',
+      password: this.migratorPassword,
+      database: db,
+      max: 1,
+      connectionTimeoutMillis: 5000,
+    });
+    try {
+      await pool.query(
+        `
+        UPDATE _prisma_migrations
+        SET rolled_back_at = NOW()
+        WHERE migration_name = $1 AND rolled_back_at IS NULL;
+      `,
+        [migrationName],
+      );
+      return { success: true, output: 'Marked rolled back via database query' };
+    } finally {
+      await pool.end().catch(() => {});
+    }
   }
 
   /**

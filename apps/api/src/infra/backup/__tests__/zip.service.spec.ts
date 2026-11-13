@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import archiver from 'archiver';
 import { ZipService, ZipSecurityError } from '../zip.service';
+import { resetEnv } from '../../../config/env.config';
 
 describe('ZipService & Archive Security', () => {
   let zipService: ZipService;
@@ -157,5 +159,70 @@ describe('ZipService & Archive Security', () => {
     await expect(zipService.extractAndValidate(corruptZip, extractDest)).rejects.toThrow(
       /Checksum mismatch/,
     );
+  });
+
+  it('rejects archive when entry count exceeds MAX_RESTORE_ENTRIES limit', async () => {
+    const originalLimit = process.env.MAX_RESTORE_ENTRIES;
+    process.env.MAX_RESTORE_ENTRIES = '3';
+    resetEnv();
+    try {
+      const excessZip = path.join(tempBaseDir, 'excess_entries.zip');
+      await new Promise<void>((resolve, reject) => {
+        const output = fs.createWriteStream(excessZip);
+        const archive = archiver('zip');
+        output.on('close', resolve);
+        archive.on('error', reject);
+        archive.pipe(output);
+
+        archive.append('{}', { name: 'manifest.json' });
+        archive.append('d1', { name: 'dump.pgdump' });
+        archive.append('f1', { name: 'filestore/file1.txt' });
+        archive.append('f2', { name: 'filestore/file2.txt' }); // 4th entry exceeds limit of 3
+        archive.finalize();
+      });
+
+      const extractDest = path.join(tempBaseDir, 'extracted_excess');
+      await expect(zipService.extractAndValidate(excessZip, extractDest)).rejects.toThrow(
+        /more than maximum allowed entries/,
+      );
+    } finally {
+      process.env.MAX_RESTORE_ENTRIES = originalLimit;
+      resetEnv();
+    }
+  });
+
+  it('allows high compression ratio for small/normal files under 100MB threshold', async () => {
+    // Highly compressible repeating pattern (e.g. repeated zeros) under 100MB
+    const repeatedZip = path.join(tempBaseDir, 'compressible_small.zip');
+    await new Promise<void>((resolve, reject) => {
+      const output = fs.createWriteStream(repeatedZip);
+      const archive = archiver('zip', { zlib: { level: 9 } });
+      output.on('close', resolve);
+      archive.on('error', reject);
+      archive.pipe(output);
+
+      const buffer = Buffer.alloc(1024 * 50, 0); // 50KB of zeros compresses to ~100 bytes (ratio > 500:1)
+      archive.append(buffer, { name: 'dump.pgdump' });
+      archive.append(
+        JSON.stringify({
+          db_name: 'erp_test',
+          schema_version: '1',
+          applied_migrations: [],
+          app_version: '0.1.0',
+          created_at: new Date().toISOString(),
+          sha256: {
+            dump: crypto.createHash('sha256').update(buffer).digest('hex'),
+          },
+        }),
+        { name: 'manifest.json' },
+      );
+      archive.finalize();
+    });
+
+    const extractDest = path.join(tempBaseDir, 'extracted_compressible');
+    // Must succeed without throwing ZIP_BOMB_DETECTED because size < 100MB
+    const res = await zipService.extractAndValidate(repeatedZip, extractDest);
+    expect(res.manifest.db_name).toBe('erp_test');
+    expect(fs.existsSync(res.dumpFilePath)).toBe(true);
   });
 });
