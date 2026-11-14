@@ -16,6 +16,10 @@ async function bootstrap() {
   const logger = app.get(LoggerService);
   app.useLogger(logger);
 
+  // Trust proxy for secure and accurate client IP extraction behind Nginx
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.set('trust proxy', true);
+
   // 2. Global Exception Filter
   app.useGlobalFilters(new GlobalExceptionFilter(logger));
 

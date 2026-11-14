@@ -101,14 +101,30 @@ jobs:
             kill -9 $PROD_API_PID || true
             exit 1
           fi
-          DEV_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Database: erp_dev" http://localhost:3000/v1/dev/tenant-info || true)
-          echo "GET /v1/dev/tenant-info in production returned HTTP status: $DEV_STATUS"
+          DEV_RES_1=$(curl -s -w "\n%{http_code}" -H "X-Database: erp_dev" http://localhost:3000/v1/dev/tenant-info || true)
+          DEV_BODY_1=$(echo "$DEV_RES_1" | head -n -1)
+          DEV_STATUS_1=$(echo "$DEV_RES_1" | tail -n 1)
+
+          DEV_RES_2=$(curl -s -w "\n%{http_code}" -H "X-Database: non_existent" http://localhost:3000/v1/dev/tenant-info || true)
+          DEV_BODY_2=$(echo "$DEV_RES_2" | head -n -1)
+          DEV_STATUS_2=$(echo "$DEV_RES_2" | tail -n 1)
+
           kill -9 $PROD_API_PID || true
-          if [ "$DEV_STATUS" != "404" ]; then
-            echo "Smoke test failed: expected HTTP 404 for /v1/dev/tenant-info in production mode, got $DEV_STATUS"
+
+          echo "GET /v1/dev/tenant-info with X-Database: erp_dev -> HTTP $DEV_STATUS_1: $DEV_BODY_1"
+          echo "GET /v1/dev/tenant-info with X-Database: non_existent -> HTTP $DEV_STATUS_2: $DEV_BODY_2"
+
+          if [ "$DEV_STATUS_1" != "404" ] || [[ "$DEV_BODY_1" != *"NOT_FOUND"* ]]; then
+            echo "Smoke test failed: expected HTTP 404 with code NOT_FOUND for existing X-Database, got status $DEV_STATUS_1 and body $DEV_BODY_1"
             exit 1
           fi
-          echo "Smoke test passed: /v1/dev/tenant-info correctly returned 404 in production mode"
+
+          if [ "$DEV_STATUS_2" != "404" ] || [[ "$DEV_BODY_2" != *"NOT_FOUND"* ]]; then
+            echo "Smoke test failed: expected HTTP 404 with code NOT_FOUND for non-existent X-Database, got status $DEV_STATUS_2 and body $DEV_BODY_2"
+            exit 1
+          fi
+
+          echo "Smoke test passed: /v1/dev/tenant-info strictly returns 404 with code NOT_FOUND in production mode for both existing and nonexistent databases"
 
   docker-verify:
     name: Verify Docker Builds
@@ -137,10 +153,24 @@ jobs:
           pnpm build
 
       - name: Build API Docker Image
-        run: docker build -f apps/api/Dockerfile -t bodo-api:ci .
+        run: |
+          docker build -f apps/api/Dockerfile -t bodo-api:ci . 2>&1 | tee docker-api.log || {
+            echo "### Docker API Build Failure Log" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -n 120 docker-api.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          }
 
       - name: Build Web Docker Image
-        run: docker build -f apps/web/Dockerfile -t bodo-web:ci .
+        run: |
+          docker build -f apps/web/Dockerfile -t bodo-web:ci . 2>&1 | tee docker-web.log || {
+            echo "### Docker Web Build Failure Log" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -n 120 docker-web.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          }
 
       - name: Verify Docker Compose config
         run: docker compose --env-file .env -f infra/docker-compose.yml config
@@ -216,10 +246,24 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
 
+      - name: Install PostgreSQL Client Tools (pg_dump, pg_restore)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
       - name: Run Database Integration Tests
-        run: pnpm test:integration
+        run: |
+          pnpm test:integration 2>&1 | tee test-output.log || {
+            echo "### Integration Test Failure Log" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -n 120 test-output.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          }
         env:
           TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
+          POSTGRES_HOST: 127.0.0.1
+          POSTGRES_PORT: 5433
           REDIS_URL: redis://:redispassword@127.0.0.1:6379
           REDIS_PASSWORD: redispassword
 

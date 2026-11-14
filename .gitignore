@@ -30,7 +30,7 @@ coverage/
 .nyc_output/
 
 # Data volumes / persistent storage
-/data/
+data/
 /pgdata/
 /filestore/
 /backups/

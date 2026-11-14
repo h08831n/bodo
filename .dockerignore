@@ -3,6 +3,8 @@
 .pnpm-store
 node_modules
 **/node_modules
+dist
+**/dist
 coverage
 storybook-static
 *.log

@@ -27,6 +27,17 @@ echo ========================================================
 echo [INFO] Working Directory: %PROJECT_ROOT%
 echo.
 
+:: Check if any containers are currently running in production or development
+set "HAS_RUNNING="
+for /f %%i in ('docker compose --env-file "%PROJECT_ROOT%\.env" -f "%PROJECT_ROOT%\infra\docker-compose.yml" ps -q 2^>nul') do (
+    set "HAS_RUNNING=1"
+)
+for /f %%i in ('docker compose --env-file "%PROJECT_ROOT%\.env" -f "%PROJECT_ROOT%\infra\docker-compose.dev.yml" ps -q 2^>nul') do (
+    set "HAS_RUNNING=1"
+)
+
+if not defined HAS_RUNNING goto no_running
+
 :: 1. Stop production compose stack
 echo [INFO] Stopping production containers...
 docker compose --env-file "%PROJECT_ROOT%\.env" -f "%PROJECT_ROOT%\infra\docker-compose.yml" stop
@@ -44,5 +55,11 @@ echo  Database volumes, configurations, and data are intact.
 echo ========================================================
 echo.
 
+pause
+exit /b 0
+
+:no_running
+echo [INFO] No running services were found.
+echo.
 pause
 exit /b 0

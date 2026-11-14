@@ -7,9 +7,19 @@ import { ConfigStoreModule } from './infra/config-store/config-store.module';
 import { TenancyModule } from './infra/tenancy/tenancy.module';
 import { TenantMiddleware } from './infra/tenancy/tenant.middleware';
 import { DevModule } from './dev/dev.module';
+import { AdminModule } from './infra/admin/admin.module';
+import { DatabaseManagerModule } from './infra/database-manager/database-manager.module';
 
 @Module({
-  imports: [RedisModule, ConfigStoreModule, TenancyModule, HealthModule, DevModule],
+  imports: [
+    RedisModule,
+    ConfigStoreModule,
+    TenancyModule,
+    HealthModule,
+    DevModule,
+    AdminModule,
+    DatabaseManagerModule,
+  ],
   providers: [LoggerService],
   exports: [LoggerService],
 })

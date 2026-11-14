@@ -248,14 +248,39 @@ describe('HTTP Multi-Tenant End-to-End Isolation (Tests 2, 3, 4, 5, 17)', () => 
     // Ready probe
     const ready = await request(app.getHttpServer()).get('/health/ready').expect(200);
 
-    expect(ready.body.status).toBe('ok');
-    expect(ready.body.checks).toEqual({
-      postgres: 'up',
-      redis: 'up',
-    });
+    expect(['ok', 'degraded']).toContain(ready.body.status);
+    expect(ready.body.checks.postgres).toBe('up');
+    expect(ready.body.checks.redis).toBe('up');
     expect(ready.body.tenantClients).toBeDefined();
     expect(ready.body.tenantClients.maxClients).toBe(env.TENANT_MAX_CLIENTS);
     expect(ready.body.tenantClients.open).toBeGreaterThanOrEqual(1);
     expect(ready.body.tenantClients.activeLeases).toBe(0); // All HTTP leases released cleanly
+  });
+
+  it('Production guard on /v1/dev/tenant-info: strictly 404 NOT_FOUND for existing and nonexistent X-Database', async () => {
+    const origEnv = env.NODE_ENV;
+    try {
+      (env as { NODE_ENV: string }).NODE_ENV = 'production';
+
+      // 1. Existing database
+      const resExisting = await request(app.getHttpServer())
+        .get('/v1/dev/tenant-info')
+        .set('X-Database', dbA)
+        .expect(404);
+      expect(resExisting.body.error.code).toBe('NOT_FOUND');
+
+      // 2. Non-existent database
+      const resNonExistent = await request(app.getHttpServer())
+        .get('/v1/dev/tenant-info')
+        .set('X-Database', 'erp_non_existent')
+        .expect(404);
+      expect(resNonExistent.body.error.code).toBe('NOT_FOUND');
+
+      // 3. Omitted database
+      const resOmitted = await request(app.getHttpServer()).get('/v1/dev/tenant-info').expect(404);
+      expect(resOmitted.body.error.code).toBe('NOT_FOUND');
+    } finally {
+      (env as { NODE_ENV: string }).NODE_ENV = origEnv;
+    }
   });
 });

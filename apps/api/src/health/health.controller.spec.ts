@@ -88,4 +88,33 @@ describe('HealthController', () => {
       }),
     );
   });
+
+  it('should return 200 on ready with degraded status when worker is down', async () => {
+    jest.spyOn(service, 'checkReady').mockResolvedValueOnce({
+      isReady: true,
+      data: {
+        status: 'degraded',
+        uptime: 10,
+        timestamp: '2026-11-11T00:00:00.000Z',
+        checks: {
+          postgres: 'up',
+          redis: 'up',
+          worker: 'down',
+        },
+      },
+    });
+
+    const jsonMock = jest.fn();
+    const statusMock = jest.fn().mockReturnValue({ json: jsonMock });
+    const res = { status: statusMock } as unknown as Response;
+
+    await controller.getReady(res);
+    expect(statusMock).toHaveBeenCalledWith(200);
+    expect(jsonMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'degraded',
+        checks: { postgres: 'up', redis: 'up', worker: 'down' },
+      }),
+    );
+  });
 });

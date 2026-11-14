@@ -44,6 +44,14 @@ export class DatabaseRegistryService implements OnModuleDestroy {
     this.cache.clear();
   }
 
+  clearCache(db?: string): void {
+    if (db) {
+      this.cache.delete(db);
+    } else {
+      this.cache.clear();
+    }
+  }
+
   /**
    * Checks whether a database exists in the PostgreSQL cluster.
    * Includes 10-second TTL cache for both positive and negative results

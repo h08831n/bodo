@@ -1,4 +1,5 @@
 import { ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
+import { z } from 'zod';
 import { GlobalExceptionFilter } from './global-exception.filter';
 import {
   DatabaseRequiredError,
@@ -142,6 +143,37 @@ describe('GlobalExceptionFilter', () => {
         code: 'DATABASE_MAINTENANCE',
         message: 'دیتابیس شرکت (erp_acme) در حالت تعمیرات است: ارتقای ساختار',
         details: undefined,
+        requestId: 'test-req-123',
+      },
+    });
+  });
+
+  it('maps ZodError to 400 VALIDATION_FAILED with field paths and Persian message', () => {
+    const { host, statusMock, jsonMock } = createMockHost();
+    const zodSchema = z.object({
+      adminPassword: z.string().min(10, 'Password must be at least 10 characters'),
+    });
+
+    let zodError: unknown;
+    try {
+      zodSchema.parse({ adminPassword: 'short' });
+    } catch (err) {
+      zodError = err;
+    }
+
+    filter.catch(zodError, host);
+
+    expect(statusMock).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
+    expect(jsonMock).toHaveBeenCalledWith({
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'داده‌های ارسالی معتبر نیستند.',
+        details: [
+          {
+            path: 'adminPassword',
+            message: 'Password must be at least 10 characters',
+          },
+        ],
         requestId: 'test-req-123',
       },
     });

@@ -1,5 +1,6 @@
 import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { ZodError } from 'zod';
 import { ApiErrorResponse, ErrorCode } from '@bodo/contracts';
 import { LoggerService } from '../logger/logger.service';
 import {
@@ -36,6 +37,22 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       code = 'DATABASE_MAINTENANCE';
       message = exception.message || 'دیتابیس شرکت در حال حاضر در حالت تعمیرات است.';
       response.setHeader('Retry-After', String(exception.retryAfterSeconds || 60));
+    } else if (
+      exception instanceof ZodError ||
+      (typeof exception === 'object' &&
+        exception !== null &&
+        (exception as { name?: string }).name === 'ZodError')
+    ) {
+      status = HttpStatus.BAD_REQUEST;
+      code = 'VALIDATION_FAILED';
+      message = 'داده‌های ارسالی معتبر نیستند.';
+      const zodErr = exception as ZodError;
+      if (Array.isArray(zodErr.errors)) {
+        details = zodErr.errors.map((err) => ({
+          path: err.path.join('.'),
+          message: err.message,
+        }));
+      }
     } else if (exception instanceof HttpException) {
       status = exception.getStatus();
       const res = exception.getResponse();
