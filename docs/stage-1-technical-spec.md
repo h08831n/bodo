@@ -654,6 +654,7 @@ registerTimelineEvent({
 | POST   | `/databases/:name/maintenance`   | فعال/غیرفعال‌سازی دستی حالت Maintenance                               |
 | PUT    | `/databases/:name/domain`        | تنظیم یا حذف دامنه                                                    |
 | POST   | `/change-master-password`        | تغییر رمز ادمین اصلی                                                  |
+| GET    | `/audit-logs`                    | مشاهده‌ی لاگ ممیزی امنیتی عملیات ادمین (`?tail=50`)                   |
 | GET    | `/jobs`                          | فهرست عملیات جاری و اخیر                                              |
 | GET    | `/jobs/:id`                      | وضعیت و پیشرفت عملیات طولانی                                          |
 
