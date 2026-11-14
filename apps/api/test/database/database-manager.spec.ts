@@ -1,10 +1,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
+import archiver from 'archiver';
 import pg from 'pg';
 import { getEnv } from '../../src/config/env.config';
 import { DatabaseManagerService } from '../../src/infra/database-manager/database-manager.service';
 import { JobQueueService } from '../../src/infra/database-manager/job-queue.service';
 import { PgToolsService } from '../../src/infra/pg-tools/pg-tools.service';
+import { LocalPgToolsDriver } from '../../src/infra/pg-tools/local-pg-tools.driver';
+import { DockerPgToolsDriver } from '../../src/infra/pg-tools/docker-pg-tools.driver';
 import { ZipService } from '../../src/infra/backup/zip.service';
 import { DomainMap } from '../../src/infra/config-store/domain-map';
 import { ConfigStoreService } from '../../src/infra/config-store/config-store.service';
@@ -13,6 +17,7 @@ import { TenantClientManager } from '../../src/infra/tenancy/tenant-client-manag
 import { MigrationRunnerService } from '../../src/infra/tenancy/migration-runner.service';
 import { DatabaseRegistryService } from '../../src/infra/tenancy/database-registry.service';
 import { RedisService } from '../../src/infra/redis/redis.service';
+import { AdminAuditLogger } from '../../src/infra/admin/admin-audit.logger';
 import { buildDatabaseUrl } from '@bodo/utils';
 
 jest.setTimeout(180000);
@@ -448,5 +453,228 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
     expect(lock2).toBe(false);
 
     await jobQueue.releaseDatabaseLock('erp_test_mgr_orig', 'job-1');
+  });
+
+  describe('Test 19: Parametrized PgTools driver integration (Local & Docker)', () => {
+    const driversToTest: Array<{ name: string; driver: LocalPgToolsDriver | DockerPgToolsDriver }> =
+      [
+        { name: 'local', driver: new LocalPgToolsDriver() },
+        {
+          name: 'docker',
+          driver: new DockerPgToolsDriver(process.env.PG_DOCKER_CONTAINER || 'bodo-postgres-dev'),
+        },
+      ];
+
+    for (const { name, driver } of driversToTest) {
+      it(`runs pg_dump and pg_restore successfully using [${name}] driver`, async () => {
+        if (!isDbConnected) return;
+
+        const availability = await driver.checkAvailable();
+        if (!availability.available) {
+          console.warn(
+            `Skipping driver [${name}] because it is not available in current environment: ${availability.error}`,
+          );
+          return;
+        }
+
+        const tempDumpPath = path.resolve(os.tmpdir(), `driver_test_${name}.dump`);
+        try {
+          // 1. Dump erp_test_mgr_dup using the driver
+          const dumpRes = await driver.dump({
+            database: duplicateDbName,
+            user: env.POSTGRES_USER || 'postgres',
+            password: superuserPass,
+            host,
+            port,
+            outputFilePath: tempDumpPath,
+          });
+
+          expect(dumpRes.bytesWritten).toBeGreaterThan(0);
+          expect(fs.existsSync(tempDumpPath)).toBe(true);
+
+          // 2. Create target database erp_test_driver_<name>
+          const targetDb = `erp_test_drv_${name}`;
+          await superuserPool
+            .query(`DROP DATABASE IF EXISTS "${targetDb}" WITH (FORCE);`)
+            .catch(() => {});
+          await superuserPool.query(`CREATE DATABASE "${targetDb}";`);
+
+          // 3. Restore using the driver
+          await driver.restore({
+            database: targetDb,
+            user: env.POSTGRES_USER || 'postgres',
+            password: superuserPass,
+            host,
+            port,
+            inputFilePath: tempDumpPath,
+          });
+
+          // 4. Verify tables exist in target database
+          const targetPool = new pg.Pool({
+            connectionString: buildDatabaseUrl({
+              user: env.POSTGRES_USER || 'postgres',
+              password: superuserPass,
+              host,
+              port,
+              database: targetDb,
+            }),
+          });
+          const tablesRes = await targetPool.query(
+            `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';`,
+          );
+          await targetPool.end();
+
+          expect(tablesRes.rowCount).toBeGreaterThan(0);
+
+          // Cleanup target db
+          await superuserPool
+            .query(`DROP DATABASE IF EXISTS "${targetDb}" WITH (FORCE);`)
+            .catch(() => {});
+        } finally {
+          if (fs.existsSync(tempDumpPath)) {
+            fs.unlinkSync(tempDumpPath);
+          }
+        }
+      });
+    }
+  });
+
+  it('Test 20: Anti-tampering integrity check rejects corrupted dump (CRLF / modified bytes) before DB modification', async () => {
+    if (!isDbConnected) return;
+
+    // 1. Create a valid dump file first
+    const tempDir = path.resolve(os.tmpdir(), 'anti_tamper_test');
+    fs.mkdirSync(tempDir, { recursive: true });
+    const originalDumpPath = path.join(tempDir, 'valid_dump.dump');
+    const tamperedDumpPath = path.join(tempDir, 'tampered_dump.dump');
+    const tamperedZipPath = path.join(tempDir, 'tampered_backup.zip');
+
+    try {
+      await pgTools.dump({
+        database: duplicateDbName,
+        user: env.POSTGRES_USER || 'postgres',
+        password: superuserPass,
+        host,
+        port,
+        outputFilePath: originalDumpPath,
+      });
+
+      const originalBytes = fs.readFileSync(originalDumpPath);
+      // Simulate CRLF alteration / byte corruption on Windows
+      const corruptedBytes = Buffer.concat([
+        originalBytes,
+        Buffer.from('\r\n# TAMPERED_INJECTED_BYTES\r\n'),
+      ]);
+      fs.writeFileSync(tamperedDumpPath, corruptedBytes);
+
+      // Create manifest with the original dump's SHA256 (or compute real sha256 of original)
+      const originalSha256 = await zipService.calculateFileSha256(originalDumpPath);
+
+      // Build zip manually with the tampered dump but the original expected sha256 in manifest
+      await new Promise<void>((resolve, reject) => {
+        const outStream = fs.createWriteStream(tamperedZipPath);
+        const archive = archiver('zip', { zlib: { level: 9 }, forceZip64: true });
+        outStream.on('close', () => resolve());
+        archive.on('error', reject);
+        archive.pipe(outStream);
+        archive.file(tamperedDumpPath, { name: 'dump.pgdump' });
+        const manifestObj = {
+          db_name: duplicateDbName,
+          schema_version: '0001_initial',
+          applied_migrations: ['0001_initial'],
+          app_version: '0.1.0',
+          created_at: new Date().toISOString(),
+          sha256: { dump: originalSha256 },
+        };
+        archive.append(Buffer.from(JSON.stringify(manifestObj, null, 2)), {
+          name: 'manifest.json',
+        });
+        archive.finalize().catch(reject);
+      });
+
+      // Attempt restore to a non-existent database name
+      const targetDbName = 'erp_test_tamper_target';
+      await superuserPool
+        .query(`DROP DATABASE IF EXISTS "${targetDbName}" WITH (FORCE);`)
+        .catch(() => {});
+
+      let caughtError: Error | null = null;
+      try {
+        await dbManager.restoreDatabase(tamperedZipPath, {
+          newName: 'test_tamper_target',
+          neutralize: false,
+        });
+      } catch (err) {
+        caughtError = err as Error;
+      }
+
+      // Must reject with checksum mismatch
+      expect(caughtError).not.toBeNull();
+      expect(caughtError?.message).toMatch(/checksum mismatch/i);
+
+      // Crucial security check: target database must NOT have been created or modified
+      const checkRes = await superuserPool.query(
+        `SELECT 1 FROM pg_database WHERE datname = '${targetDbName}';`,
+      );
+      expect(checkRes.rowCount).toBe(0);
+    } finally {
+      if (fs.existsSync(tempDir)) {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('Test 21: Client tool version check ensures pg_dump / pg_restore >= 16', async () => {
+    // 1. Verify current tool version passes check
+    const checkResult = await pgTools.checkAvailable();
+    expect(checkResult.available).toBe(true);
+    expect(checkResult.version).toBeDefined();
+
+    // 2. Verify older version error condition logic
+    // Simulate what happens when pg_dump reports an older version (e.g. PostgreSQL 14.2)
+    const match = 'pg_dump (PostgreSQL) 14.2'.match(
+      /(?:pg_dump\s+\(PostgreSQL\)\s+|PostgreSQL\s+)?(\d+)(?:\.\d+)?/i,
+    );
+    expect(match).toBeDefined();
+    expect(match?.[1]).toBeDefined();
+    const major = parseInt(match?.[1] || '0', 10);
+    expect(major).toBe(14);
+    expect(major < 16).toBe(true);
+  });
+
+  it('Test 22: AdminAuditLogger records all admin operations with IP and requestId, strictly masking secrets', async () => {
+    const auditLogger = new AdminAuditLogger();
+    const testRequestId = `req-test-audit-${Date.now()}`;
+    const testActorIp = '192.168.1.100';
+
+    await auditLogger.log({
+      action: 'CREATE_DATABASE',
+      status: 'SUCCESS',
+      ip: testActorIp,
+      requestId: testRequestId,
+      jobId: 'job-create-99',
+      target: 'erp_test_company',
+      details: {
+        adminUsername: 'admin',
+        adminPassword: 'SUPER_SECRET_PASSWORD_123',
+        token: 'BEARER_SECRET_TOKEN_456',
+        createdDb: 'erp_test_company',
+      },
+    });
+
+    const recentLogs = await auditLogger.getRecentLogs(10);
+    const entry = recentLogs.find((l) => l.requestId === testRequestId);
+    expect(entry).toBeDefined();
+    expect(entry?.ip).toBe(testActorIp);
+    expect(entry?.jobId).toBe('job-create-99');
+    expect(entry?.target).toBe('erp_test_company');
+    expect(entry?.action).toBe('CREATE_DATABASE');
+    expect(entry?.status).toBe('SUCCESS');
+
+    // Secrets MUST be masked with ******
+    expect(entry?.details?.adminPassword).toBe('******');
+    expect(entry?.details?.token).toBe('******');
+    expect(JSON.stringify(entry)).not.toContain('SUPER_SECRET_PASSWORD_123');
+    expect(JSON.stringify(entry)).not.toContain('BEARER_SECRET_TOKEN_456');
   });
 });

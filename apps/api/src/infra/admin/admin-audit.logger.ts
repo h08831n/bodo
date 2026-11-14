@@ -5,10 +5,12 @@ import { getEnv } from '../../config/env.config';
 
 export interface AdminAuditEntry {
   timestamp?: string;
-  ip: string;
+  ip?: string;
+  actorIp?: string;
   action: string;
   target?: string;
   status: 'SUCCESS' | 'FAILURE';
+  jobId?: string;
   requestId?: string;
   details?: Record<string, unknown>;
   error?: string;
@@ -34,21 +36,46 @@ export class AdminAuditLogger {
     this.logFilePath = path.join(logsDir, 'admin-audit.log');
   }
 
+  getLogFilePath(): string {
+    return this.logFilePath;
+  }
+
+  getRecentLogs(tail: number = 50): AdminAuditEntry[] {
+    if (!fs.existsSync(this.logFilePath)) return [];
+    try {
+      const content = fs.readFileSync(this.logFilePath, 'utf8');
+      const lines = content.trim().split('\n').filter(Boolean);
+      const selected = lines.slice(-tail);
+      return selected
+        .map((line) => {
+          try {
+            return JSON.parse(line) as AdminAuditEntry;
+          } catch {
+            return null;
+          }
+        })
+        .filter((x): x is AdminAuditEntry => x !== null);
+    } catch {
+      return [];
+    }
+  }
+
   log(entry: AdminAuditEntry): void {
-    const record = {
+    const record: Record<string, unknown> = {
       timestamp: entry.timestamp || new Date().toISOString(),
-      ip: entry.ip,
+      ip: entry.ip || entry.actorIp || '127.0.0.1',
       action: entry.action,
       target: entry.target || 'N/A',
       status: entry.status,
+      jobId: entry.jobId,
       requestId: entry.requestId || 'N/A',
       details: entry.details,
       error: entry.error,
     };
 
     // Sanitize any accidental password leaking
-    if (record.details) {
-      const sanitized = { ...record.details };
+    if (record.details && typeof record.details === 'object') {
+      const sanitized = { ...(record.details as Record<string, unknown>) };
       for (const k of Object.keys(sanitized)) {
         if (/pass|secret|token|key/i.test(k)) {
           sanitized[k] = '******';

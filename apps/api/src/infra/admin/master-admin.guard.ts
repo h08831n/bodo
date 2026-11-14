@@ -6,11 +6,14 @@ import {
   ForbiddenException,
   UnauthorizedException,
   SetMetadata,
+  Inject,
+  Optional,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { getEnv } from '../../config/env.config';
 import { MasterAuthService } from './master-auth.service';
+import { AdminAuditLogger } from './admin-audit.logger';
 import { isIpAllowed } from './ip-allowlist';
 
 export const IS_PUBLIC_ADMIN_KEY = 'isPublicAdmin';
@@ -21,6 +24,7 @@ export class MasterAdminGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly masterAuth: MasterAuthService,
+    @Optional() @Inject(AdminAuditLogger) private readonly auditLogger?: AdminAuditLogger,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -36,6 +40,13 @@ export class MasterAdminGuard implements CanActivate {
     // 2. IP Allowlist Verification
     const clientIp = this.extractClientIp(request);
     if (!isIpAllowed(clientIp, env.DB_MANAGER_ALLOWED_IPS)) {
+      this.auditLogger?.log({
+        ip: clientIp,
+        action: 'ACCESS_DENIED_ALLOWLIST',
+        status: 'FAILURE',
+        requestId: request.requestId || (request.headers['x-request-id'] as string) || 'N/A',
+        error: 'Access to Database Manager is restricted by IP allowlist',
+      });
       throw new ForbiddenException({
         code: 'FORBIDDEN',
         message: 'Access to Database Manager is restricted by IP allowlist',

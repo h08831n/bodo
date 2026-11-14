@@ -75,7 +75,7 @@ export const EnvSchema = z.object({
   MAX_RESTORE_UPLOAD_MB: z
     .string()
     .transform((val) => parseInt(val, 10))
-    .default('100'),
+    .default('5120'),
   MAX_RESTORE_UNCOMPRESSED_MB: z
     .string()
     .transform((val) => parseInt(val, 10))

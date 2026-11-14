@@ -56,6 +56,7 @@ Commands:
   domain <name> [hostname]      Assign or clear (if omitted) domain mapping
   jobs [status]                 List BullMQ admin jobs (active, completed, failed, etc.)
   watch <jobId>                 Stream/poll progress of an ongoing background job
+  audit [--tail <N>]            View recent admin operations audit logs (default: 50)
 
 Options:
   --url <url>                   Base URL of the Bodo API (default: ${API_BASE})
@@ -294,7 +295,12 @@ async function main() {
 
       const adminUsername = userIdx !== -1 ? commandArgs[userIdx + 1] : 'admin';
       const adminFullName = nameIdx !== -1 ? commandArgs[nameIdx + 1] : 'مدیر سیستم';
-      let adminPassword = passIdx !== -1 ? commandArgs[passIdx + 1] : null;
+      let adminPassword = passIdx !== -1 ? commandArgs[passIdx + 1] : process.env.ADMIN_PASSWORD || null;
+
+      if (passIdx !== -1) {
+        console.warn('\n[SECURITY WARNING] Passing passwords via --pass CLI flag records secrets in your terminal history.');
+        console.warn('                   Consider interactive prompting or setting the ADMIN_PASSWORD environment variable.\n');
+      }
 
       if (!adminPassword) {
         adminPassword = await promptSecure(`Admin password for "${name}": `);
@@ -326,7 +332,12 @@ async function main() {
         process.exit(1);
       }
       const passIdx = commandArgs.indexOf('--pass');
-      let adminPassword = passIdx !== -1 ? commandArgs[passIdx + 1] : null;
+      let adminPassword = passIdx !== -1 ? commandArgs[passIdx + 1] : process.env.ADMIN_PASSWORD || null;
+
+      if (passIdx !== -1) {
+        console.warn('\n[SECURITY WARNING] Passing passwords via --pass CLI flag records secrets in your terminal history.');
+        console.warn('                   Consider interactive prompting or setting the ADMIN_PASSWORD environment variable.\n');
+      }
 
       const res = await client.request('POST', `/v1/admin/databases/${source}/duplicate`, {
         newName: target,
@@ -542,6 +553,30 @@ async function main() {
         process.exit(1);
       }
       await watchJob(client, jobId);
+      break;
+    }
+
+    case 'audit': {
+      const tailIdx = commandArgs.indexOf('--tail');
+      const tail = tailIdx !== -1 ? parseInt(commandArgs[tailIdx + 1], 10) || 50 : 50;
+      const logs = await client.request('GET', `/v1/admin/audit-logs?tail=${tail}`);
+      console.log(`\n--- Admin Operations Audit Log (Last ${logs.length} entries) ---`);
+      if (!logs || logs.length === 0) {
+        console.log('(No audit log entries recorded yet)');
+        break;
+      }
+      console.table(
+        logs.map((l) => ({
+          Timestamp: new Date(l.timestamp).toLocaleString(),
+          Action: l.action,
+          Target: l.target || '-',
+          Status: l.status,
+          JobId: l.jobId || '-',
+          RequestId: l.requestId && l.requestId !== 'N/A' ? l.requestId.slice(0, 8) + '...' : '-',
+          IP: l.ip,
+          Error: l.error || '-',
+        })),
+      );
       break;
     }
 

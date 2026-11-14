@@ -4,6 +4,7 @@ import { Logger } from '@nestjs/common';
 import { getEnv } from '../../config/env.config';
 import { DatabaseManagerService } from './database-manager.service';
 import { JobQueueService, AdminJobData } from './job-queue.service';
+import { AdminAuditLogger } from '../admin/admin-audit.logger';
 
 export class AdminWorkerRunner {
   private readonly logger = new Logger(AdminWorkerRunner.name);
@@ -15,6 +16,7 @@ export class AdminWorkerRunner {
   constructor(
     private readonly dbManager: DatabaseManagerService,
     private readonly jobQueue: JobQueueService,
+    private readonly auditLogger?: AdminAuditLogger,
   ) {}
 
   async start(): Promise<void> {
@@ -83,13 +85,24 @@ export class AdminWorkerRunner {
   }
 
   private async processJob(job: Job<AdminJobData, unknown, string>): Promise<unknown> {
-    const { type, database, payload } = job.data;
+    const { type, database, payload, requestId = 'N/A', clientIp = '127.0.0.1' } = job.data;
     const jobId = String(job.id);
+    const actionName = `${type.toUpperCase()}_DATABASE`;
 
     // 1. Acquire per-database distributed lock in Redis
     const acquired = await this.jobQueue.acquireDatabaseLock(database, jobId);
     if (!acquired) {
-      throw new Error(`Database "${database}" is currently locked by another active operation`);
+      const lockError = `Database "${database}" is currently locked by another active operation`;
+      this.auditLogger?.log({
+        ip: clientIp,
+        action: actionName,
+        target: database,
+        status: 'FAILURE',
+        jobId,
+        requestId,
+        error: lockError,
+      });
+      throw new Error(lockError);
     }
 
     const onProgress = async (percent: number, step: string, message: string) => {
@@ -97,9 +110,10 @@ export class AdminWorkerRunner {
     };
 
     try {
+      let result: unknown;
       switch (type) {
         case 'create':
-          return await this.dbManager.createDatabase(
+          result = await this.dbManager.createDatabase(
             payload as {
               name: string;
               adminUsername: string;
@@ -108,37 +122,66 @@ export class AdminWorkerRunner {
             },
             onProgress,
           );
+          break;
 
         case 'duplicate':
-          return await this.dbManager.duplicateDatabase(
+          result = await this.dbManager.duplicateDatabase(
             payload.sourceDatabase as string,
             payload as { newName: string; neutralize: boolean },
             onProgress,
           );
+          break;
 
         case 'backup':
-          return await this.dbManager.backupDatabase(database, onProgress);
+          result = await this.dbManager.backupDatabase(database, onProgress);
+          break;
 
         case 'restore':
-          return await this.dbManager.restoreDatabase(
+          result = await this.dbManager.restoreDatabase(
             payload.zipPath as string,
             payload as { newName: string; neutralize: boolean },
             onProgress,
           );
+          break;
 
         case 'delete':
-          return await this.dbManager.deleteDatabase(
+          result = await this.dbManager.deleteDatabase(
             database,
             payload.confirmName as string,
             onProgress,
           );
+          break;
 
         case 'upgrade':
-          return await this.dbManager.upgradeDatabase(database, onProgress);
+          result = await this.dbManager.upgradeDatabase(database, onProgress);
+          break;
 
         default:
           throw new Error(`Unknown job type: "${type}"`);
       }
+
+      this.auditLogger?.log({
+        ip: clientIp,
+        action: actionName,
+        target: database,
+        status: 'SUCCESS',
+        jobId,
+        requestId,
+      });
+
+      return result;
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.auditLogger?.log({
+        ip: clientIp,
+        action: actionName,
+        target: database,
+        status: 'FAILURE',
+        jobId,
+        requestId,
+        error: errorMsg,
+      });
+      throw err;
     } finally {
       // Always release distributed lock in finally
       await this.jobQueue.releaseDatabaseLock(database, jobId);

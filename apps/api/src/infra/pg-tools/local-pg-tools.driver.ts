@@ -44,7 +44,21 @@ export class LocalPgToolsDriver implements PgToolsDriver {
 
       child.on('close', (code) => {
         if (code === 0) {
-          resolve({ available: true, version: stdout.trim() });
+          const versionStr = stdout.trim();
+          const match = versionStr.match(
+            /(?:pg_dump\s+\(PostgreSQL\)\s+|PostgreSQL\s+)?(\d+)(?:\.\d+)?/i,
+          );
+          if (match && match[1]) {
+            const major = parseInt(match[1], 10);
+            if (major < 16) {
+              return resolve({
+                available: false,
+                version: versionStr,
+                error: `PostgreSQL client tools version (${major}) is older than PostgreSQL server (16). Client tools must be version 16 or newer.`,
+              });
+            }
+          }
+          resolve({ available: true, version: versionStr });
         } else {
           resolve({ available: false, error: stderr.trim() || `Exit code ${code}` });
         }

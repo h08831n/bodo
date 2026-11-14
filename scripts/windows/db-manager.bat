@@ -42,9 +42,10 @@ echo  [7] Delete Tenant Database
 echo  [8] Apply Schema Upgrades
 echo  [9] Repair Database / Unblock
 echo  [10] View Background Jobs
+echo  [11] View Admin Audit Log
 echo  [0] Exit
 echo.
-set /p "CHOICE=Select an option [0-10]: "
+set /p "CHOICE=Select an option [0-11]: "
 
 if "%CHOICE%"=="1" goto opt_list
 if "%CHOICE%"=="2" goto opt_create
@@ -56,6 +57,7 @@ if "%CHOICE%"=="7" goto opt_delete
 if "%CHOICE%"=="8" goto opt_upgrade
 if "%CHOICE%"=="9" goto opt_repair
 if "%CHOICE%"=="10" goto opt_jobs
+if "%CHOICE%"=="11" goto opt_audit
 if "%CHOICE%"=="0" exit /b 0
 
 echo Invalid choice.
@@ -148,6 +150,13 @@ goto menu
 :opt_jobs
 echo.
 node scripts\db-manager.mjs jobs
+echo.
+pause
+goto menu
+
+:opt_audit
+echo.
+node scripts\db-manager.mjs audit
 echo.
 pause
 goto menu

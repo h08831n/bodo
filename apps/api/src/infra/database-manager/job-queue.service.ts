@@ -9,6 +9,8 @@ export interface AdminJobData {
   database: string;
   payload: Record<string, unknown>;
   createdAt: string;
+  requestId?: string;
+  clientIp?: string;
 }
 
 export interface AdminJobProgress {
@@ -83,12 +85,15 @@ export class JobQueueService implements OnModuleDestroy {
     type: AdminJobData['type'],
     database: string,
     payload: Record<string, unknown>,
+    meta?: { requestId?: string; clientIp?: string },
   ): Promise<string> {
     const jobData: AdminJobData = {
       type,
       database,
       payload,
       createdAt: new Date().toISOString(),
+      requestId: meta?.requestId,
+      clientIp: meta?.clientIp,
     };
 
     const job = await this.queue.add(type, jobData);

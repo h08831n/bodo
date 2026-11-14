@@ -39,7 +39,7 @@ describe('Environment Configuration Validation', () => {
     expect(config.CONFIG_DIR).toBe('./data/config');
     expect(config.FILESTORE_DIR).toBe('./data/filestore');
     expect(config.BACKUP_DIR).toBe('./data/backups');
-    expect(config.MAX_RESTORE_UPLOAD_MB).toBe(100);
+    expect(config.MAX_RESTORE_UPLOAD_MB).toBe(5120);
     expect(config.MAX_RESTORE_UNCOMPRESSED_MB).toBe(20480);
     expect(config.MAX_RESTORE_ENTRIES).toBe(100000);
     expect(config.PG_TOOLS_DRIVER).toBe('local');

@@ -33,7 +33,7 @@ export class AdminAuthController {
   async login(@Body() rawBody: unknown, @Req() req: Request): Promise<AdminLoginResponse> {
     const body = AdminLoginRequestSchema.parse(rawBody);
     const clientIp = req.ip || req.socket.remoteAddress || '127.0.0.1';
-    const requestId = (req.headers['x-request-id'] as string) || 'N/A';
+    const requestId = req.requestId || (req.headers['x-request-id'] as string) || 'N/A';
 
     // 1. Rate Limiting Check
     const rateLimit = await this.masterAuth.checkRateLimit(clientIp);
@@ -96,7 +96,7 @@ export class AdminAuthController {
   ): Promise<{ message: string }> {
     const body = ChangeMasterPasswordRequestSchema.parse(rawBody);
     const clientIp = req.ip || req.socket.remoteAddress || '127.0.0.1';
-    const requestId = (req.headers['x-request-id'] as string) || 'N/A';
+    const requestId = req.requestId || (req.headers['x-request-id'] as string) || 'N/A';
 
     try {
       await this.masterAuth.changePassword(body.currentPassword, body.newPassword);

@@ -3,6 +3,7 @@ import { AppModule } from './app.module';
 import { DatabaseManagerService } from './infra/database-manager/database-manager.service';
 import { JobQueueService } from './infra/database-manager/job-queue.service';
 import { AdminWorkerRunner } from './infra/database-manager/worker-runner';
+import { AdminAuditLogger } from './infra/admin/admin-audit.logger';
 import { LoggerService } from './common/logger/logger.service';
 
 async function bootstrapWorker() {
@@ -10,13 +11,14 @@ async function bootstrapWorker() {
   logger.log('Bootstrapping Bodo Background Worker application context...', 'WorkerBootstrap');
 
   const appContext = await NestFactory.createApplicationContext(AppModule, {
-    logger: false,
+    logger,
   });
 
   const dbManager = appContext.get(DatabaseManagerService);
   const jobQueue = appContext.get(JobQueueService);
+  const auditLogger = appContext.get(AdminAuditLogger);
 
-  const runner = new AdminWorkerRunner(dbManager, jobQueue);
+  const runner = new AdminWorkerRunner(dbManager, jobQueue, auditLogger);
   await runner.start();
 
   // Setup graceful termination handlers
