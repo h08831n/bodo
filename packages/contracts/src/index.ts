@@ -7,6 +7,8 @@ export const ErrorCodeSchema = z.enum([
   'VALIDATION_FAILED',
   'CONFLICT',
   'VERSION_CONFLICT',
+  'IDEMPOTENCY_KEY_REUSED',
+  'UNSUPPORTED_MEDIA_TYPE',
   'RATE_LIMITED',
   'DATABASE_REQUIRED',
   'DATABASE_MAINTENANCE',
@@ -73,3 +75,4 @@ export const HealthStatusSchema = z.object({
 export type HealthStatus = z.infer<typeof HealthStatusSchema>;
 
 export * from './admin.js';
+export * from './pagination.js';

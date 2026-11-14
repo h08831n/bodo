@@ -24,6 +24,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let message = 'خطای داخلی سرور رخ داده است. لطفاً بعداً دوباره تلاش کنید.';
     let details: Array<{ path?: string; message: string }> | undefined;
 
+    // 1. Tenancy errors
     if (exception instanceof DatabaseRequiredError) {
       status = HttpStatus.BAD_REQUEST;
       code = 'DATABASE_REQUIRED';
@@ -37,23 +38,93 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       code = 'DATABASE_MAINTENANCE';
       message = exception.message || 'دیتابیس شرکت در حال حاضر در حالت تعمیرات است.';
       response.setHeader('Retry-After', String(exception.retryAfterSeconds || 60));
+    }
+    // 2. Body-parser malformed JSON or payload too large
+    else if (
+      exception instanceof SyntaxError &&
+      'status' in exception &&
+      (exception as unknown as Record<string, unknown>).status === 400 &&
+      'body' in exception
+    ) {
+      status = HttpStatus.BAD_REQUEST;
+      code = 'VALIDATION_FAILED';
+      message = 'قالب JSON نامعتبر است.';
     } else if (
+      typeof exception === 'object' &&
+      exception !== null &&
+      ((exception as Record<string, unknown>).type === 'entity.too.large' ||
+        (exception as Record<string, unknown>).status === 413)
+    ) {
+      status = HttpStatus.PAYLOAD_TOO_LARGE;
+      code = 'PAYLOAD_TOO_LARGE';
+      message = 'حجم بدنه درخواست بیش از حد مجاز است.';
+    }
+    // 3. ZodValidationException (from nestjs-zod) or raw ZodError
+    else if (
+      (typeof exception === 'object' &&
+        exception !== null &&
+        (exception as Record<string, unknown>).name === 'ZodValidationException') ||
       exception instanceof ZodError ||
       (typeof exception === 'object' &&
         exception !== null &&
-        (exception as { name?: string }).name === 'ZodError')
+        (exception as Record<string, unknown>).name === 'ZodError')
     ) {
       status = HttpStatus.BAD_REQUEST;
       code = 'VALIDATION_FAILED';
       message = 'داده‌های ارسالی معتبر نیستند.';
-      const zodErr = exception as ZodError;
-      if (Array.isArray(zodErr.errors)) {
-        details = zodErr.errors.map((err) => ({
-          path: err.path.join('.'),
+
+      const zodObj =
+        typeof (exception as Record<string, unknown>).getZodError === 'function'
+          ? (exception as { getZodError: () => ZodError }).getZodError()
+          : exception;
+
+      const issues =
+        (zodObj as ZodError).issues ||
+        (zodObj as { errors?: Array<{ path?: unknown; message: string }> }).errors;
+      if (Array.isArray(issues)) {
+        details = issues.map((err) => ({
+          path: Array.isArray(err.path) ? err.path.join('.') : String(err.path ?? ''),
           message: err.message,
         }));
       }
-    } else if (exception instanceof HttpException) {
+    }
+    // 4. Prisma known request errors
+    else if (
+      typeof exception === 'object' &&
+      exception !== null &&
+      (exception as Record<string, unknown>).name === 'PrismaClientKnownRequestError'
+    ) {
+      const prismaCode = (exception as Record<string, unknown>).code;
+      switch (prismaCode) {
+        case 'P2002':
+          status = HttpStatus.CONFLICT;
+          code = 'CONFLICT';
+          message = 'رکورد تکراری است یا با رکورد دیگری تداخل دارد.';
+          break;
+        case 'P2025':
+          status = HttpStatus.NOT_FOUND;
+          code = 'NOT_FOUND';
+          message = 'منبع مورد نظر یافت نشد.';
+          break;
+        case 'P2003':
+          status = HttpStatus.BAD_REQUEST;
+          code = 'VALIDATION_FAILED';
+          message = 'ارجاع به رکورد نامعتبر است.';
+          break;
+        case 'P2034':
+          status = HttpStatus.CONFLICT;
+          code = 'CONFLICT';
+          message = 'تداخل تراکنش هم‌زمان، لطفاً دوباره تلاش کنید.';
+          break;
+        default:
+          status = HttpStatus.INTERNAL_SERVER_ERROR;
+          code = 'INTERNAL';
+          message = 'خطای پایگاه داده رخ داده است.';
+          break;
+      }
+    }
+    // 5. Standard NestJS HttpException
+    else if (exception instanceof HttpException) {
       status = exception.getStatus();
       const res = exception.getResponse();
 
@@ -64,7 +135,6 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         if (typeof obj.message === 'string') {
           message = obj.message;
         } else if (Array.isArray(obj.message)) {
-          // NestJS default ValidationPipe format
           details = obj.message.map((msg: unknown) => ({
             message: String(msg),
           }));
@@ -100,6 +170,19 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           case HttpStatus.CONFLICT:
             code = 'CONFLICT';
             if (message === 'Conflict') message = 'تداخل داده‌ها رخ داده است.';
+            break;
+          case HttpStatus.UNPROCESSABLE_ENTITY:
+            code = 'IDEMPOTENCY_KEY_REUSED';
+            if (message === 'Unprocessable Entity') message = 'درخواست قابل پردازش نیست.';
+            break;
+          case HttpStatus.PAYLOAD_TOO_LARGE:
+            code = 'PAYLOAD_TOO_LARGE';
+            if (message === 'Payload Too Large') message = 'حجم بدنه درخواست بیش از حد مجاز است.';
+            break;
+          case HttpStatus.UNSUPPORTED_MEDIA_TYPE:
+            code = 'UNSUPPORTED_MEDIA_TYPE';
+            if (message === 'Unsupported Media Type')
+              message = 'قالب رسانه درخواست پشتیبانی نمی‌شود.';
             break;
           case HttpStatus.TOO_MANY_REQUESTS:
             code = 'RATE_LIMITED';

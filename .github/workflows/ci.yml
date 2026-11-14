@@ -52,6 +52,23 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Export OpenAPI Specification
+        run: pnpm openapi:export
+
+      - name: Verify OpenAPI Specification Validity
+        shell: bash
+        run: |
+          test -f apps/api/dist/openapi.json
+          node -e "const doc = JSON.parse(fs.readFileSync('apps/api/dist/openapi.json', 'utf8')); if (!doc.openapi.startsWith('3.')) throw new Error('Invalid OpenAPI version: ' + doc.openapi);"
+          echo "OpenAPI 3.0 specification successfully validated."
+
+      - name: Upload OpenAPI Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-specification
+          path: apps/api/dist/openapi.json
+          if-no-files-found: error
+
       - name: Build Storybook
         run: pnpm --filter @bodo/ui build-storybook
 

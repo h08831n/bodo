@@ -178,4 +178,106 @@ describe('GlobalExceptionFilter', () => {
       },
     });
   });
+
+  it('maps malformed JSON SyntaxError to 400 VALIDATION_FAILED', () => {
+    const { host, statusMock, jsonMock } = createMockHost();
+    const syntaxError = Object.assign(
+      new SyntaxError('Unexpected token } in JSON at position 12'),
+      {
+        status: 400,
+        body: '{ invalid: }',
+      },
+    );
+
+    filter.catch(syntaxError, host);
+
+    expect(statusMock).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
+    expect(jsonMock).toHaveBeenCalledWith({
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'قالب JSON نامعتبر است.',
+        details: undefined,
+        requestId: 'test-req-123',
+      },
+    });
+  });
+
+  it('maps 413 payload too large to PAYLOAD_TOO_LARGE', () => {
+    const { host, statusMock, jsonMock } = createMockHost();
+    const error = { type: 'entity.too.large', status: 413 };
+
+    filter.catch(error, host);
+
+    expect(statusMock).toHaveBeenCalledWith(HttpStatus.PAYLOAD_TOO_LARGE);
+    expect(jsonMock).toHaveBeenCalledWith({
+      error: {
+        code: 'PAYLOAD_TOO_LARGE',
+        message: 'حجم بدنه درخواست بیش از حد مجاز است.',
+        details: undefined,
+        requestId: 'test-req-123',
+      },
+    });
+  });
+
+  it('maps 415 unsupported media type to UNSUPPORTED_MEDIA_TYPE', () => {
+    const { host, statusMock, jsonMock } = createMockHost();
+    const exception = new HttpException(
+      'Unsupported Media Type',
+      HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+    );
+
+    filter.catch(exception, host);
+
+    expect(statusMock).toHaveBeenCalledWith(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+    expect(jsonMock).toHaveBeenCalledWith({
+      error: {
+        code: 'UNSUPPORTED_MEDIA_TYPE',
+        message: 'قالب رسانه درخواست پشتیبانی نمی‌شود.',
+        details: undefined,
+        requestId: 'test-req-123',
+      },
+    });
+  });
+
+  it('maps Prisma P2002 to 409 CONFLICT', () => {
+    const { host, statusMock, jsonMock } = createMockHost();
+    const error = {
+      name: 'PrismaClientKnownRequestError',
+      code: 'P2002',
+      message: 'Unique constraint failed on the fields: (`email`)',
+    };
+
+    filter.catch(error, host);
+
+    expect(statusMock).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+    expect(jsonMock).toHaveBeenCalledWith({
+      error: {
+        code: 'CONFLICT',
+        message: 'رکورد تکراری است یا با رکورد دیگری تداخل دارد.',
+        details: undefined,
+        requestId: 'test-req-123',
+      },
+    });
+  });
+
+  it('maps Prisma P2025 to 404 NOT_FOUND', () => {
+    const { host, statusMock, jsonMock } = createMockHost();
+    const error = {
+      name: 'PrismaClientKnownRequestError',
+      code: 'P2025',
+      message: 'Record to update not found.',
+    };
+
+    filter.catch(error, host);
+
+    expect(statusMock).toHaveBeenCalledWith(HttpStatus.NOT_FOUND);
+    expect(jsonMock).toHaveBeenCalledWith({
+      error: {
+        code: 'NOT_FOUND',
+        message: 'منبع مورد نظر یافت نشد.',
+        details: undefined,
+        requestId: 'test-req-123',
+      },
+    });
+  });
 });

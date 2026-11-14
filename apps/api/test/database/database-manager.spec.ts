@@ -23,6 +23,12 @@ import { MigrationRunnerService } from '../../src/infra/tenancy/migration-runner
 import { DatabaseRegistryService } from '../../src/infra/tenancy/database-registry.service';
 import { RedisService } from '../../src/infra/redis/redis.service';
 import { AdminAuditLogger } from '../../src/infra/admin/admin-audit.logger';
+import { ZodValidationPipe } from 'nestjs-zod';
+import {
+  CreateDatabaseDto,
+  DuplicateDatabaseDto,
+  DeleteDatabaseDto,
+} from '../../src/infra/database-manager/dto/database-manager.dto';
 import { buildDatabaseUrl } from '@bodo/utils';
 
 jest.setTimeout(180000);
@@ -632,6 +638,7 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
   });
 
   it('Test 21: Client tool version check ensures pg_dump / pg_restore >= 16', async () => {
+    if (!isDbConnected || !pgTools) return;
     // 1. Verify current tool version passes check
     const checkResult = await pgTools.checkAvailable();
     expect(checkResult.available).toBe(true);
@@ -695,16 +702,29 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
   }
 
   describe('Test 23: Table-driven negative test suite for all admin endpoints', () => {
+    beforeEach(() => {
+      if (!isDbConnected) return;
+    });
+
     const mockReq = {
       ip: '127.0.0.1',
       requestId: 'test-req-negative',
       headers: {},
     } as unknown as Request;
 
-    const callControllerAndFilter = async (
+    const validationPipe = new ZodValidationPipe();
+
+    const callControllerAndFilter = async <T>(
       fn: () => Promise<unknown>,
+      dtoMeta?: { metatype: new (...args: unknown[]) => T; payload: unknown },
     ): Promise<{ status: number; body: ApiResponseError }> => {
       try {
+        if (dtoMeta) {
+          await validationPipe.transform(dtoMeta.payload, {
+            type: 'body',
+            metatype: dtoMeta.metatype,
+          });
+        }
         const result = await fn();
         return { status: 200, body: result as ApiResponseError };
       } catch (err: unknown) {
@@ -736,16 +756,15 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
     };
 
     it('POST /databases rejects weak password (<10 chars) with 400 VALIDATION_FAILED and adminPassword path', async () => {
-      const res = await callControllerAndFilter(() =>
-        controller.createDatabase(
-          {
-            name: 'validslug',
-            adminUsername: 'admin',
-            adminFullName: 'مدیر تستی',
-            adminPassword: '12345',
-          },
-          mockReq,
-        ),
+      const payload = {
+        name: 'validslug',
+        adminUsername: 'admin',
+        adminFullName: 'مدیر تستی',
+        adminPassword: '12345',
+      };
+      const res = await callControllerAndFilter(
+        () => controller.createDatabase(payload as unknown as CreateDatabaseDto, mockReq),
+        { metatype: CreateDatabaseDto, payload },
       );
       expect(res.status).toBe(400);
       expect(res.body?.error?.code).toBe('VALIDATION_FAILED');
@@ -758,16 +777,15 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
     });
 
     it('POST /databases rejects invalid slug names with 400 VALIDATION_FAILED', async () => {
-      const res = await callControllerAndFilter(() =>
-        controller.createDatabase(
-          {
-            name: 'Invalid Name!',
-            adminUsername: 'admin',
-            adminFullName: 'مدیر تستی',
-            adminPassword: 'ValidPassword123!',
-          },
-          mockReq,
-        ),
+      const payload = {
+        name: 'Invalid Name!',
+        adminUsername: 'admin',
+        adminFullName: 'مدیر تستی',
+        adminPassword: 'ValidPassword123!',
+      };
+      const res = await callControllerAndFilter(
+        () => controller.createDatabase(payload as unknown as CreateDatabaseDto, mockReq),
+        { metatype: CreateDatabaseDto, payload },
       );
       expect(res.status).toBe(400);
       expect(res.body?.error?.code).toBe('VALIDATION_FAILED');
@@ -949,7 +967,7 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
     for (let i = 0; i < fuzzBodies.length; i++) {
       it(`POST /databases with fuzz payload #${i + 1} returns 4xx and never 500`, async () => {
         const res = await callControllerAndFilter(() =>
-          controller.createDatabase(fuzzBodies[i], mockReq),
+          controller.createDatabase(fuzzBodies[i] as unknown as CreateDatabaseDto, mockReq),
         );
         expect(res.status).toBeGreaterThanOrEqual(400);
         expect(res.status).toBeLessThan(500);
@@ -960,7 +978,11 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
 
       it(`POST /databases/:name/duplicate with fuzz payload #${i + 1} returns 4xx and never 500`, async () => {
         const res = await callControllerAndFilter(() =>
-          controller.duplicateDatabase('test_mgr_orig', fuzzBodies[i], mockReq),
+          controller.duplicateDatabase(
+            'test_mgr_orig',
+            fuzzBodies[i] as unknown as DuplicateDatabaseDto,
+            mockReq,
+          ),
         );
         expect(res.status).toBeGreaterThanOrEqual(400);
         expect(res.status).toBeLessThan(500);
@@ -969,7 +991,11 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
 
       it(`DELETE /databases/:name with fuzz payload #${i + 1} returns 4xx and never 500`, async () => {
         const res = await callControllerAndFilter(() =>
-          controller.deleteDatabase('test_mgr_orig', fuzzBodies[i], mockReq),
+          controller.deleteDatabase(
+            'test_mgr_orig',
+            fuzzBodies[i] as unknown as DeleteDatabaseDto,
+            mockReq,
+          ),
         );
         expect(res.status).toBeGreaterThanOrEqual(400);
         expect(res.status).toBeLessThan(500);

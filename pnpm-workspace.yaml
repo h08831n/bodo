@@ -11,3 +11,4 @@ allowBuilds:
   protobufjs: false
   ssh2: false
   msgpackr-extract: false
+  '@scarf/scarf': false
