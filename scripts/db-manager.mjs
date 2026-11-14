@@ -144,7 +144,9 @@ class AdminClient {
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(data.message || `Login failed with HTTP ${res.status}`);
+      const errPayload = data.error || data;
+      const msg = errPayload.message || data.message || `Login failed with HTTP ${res.status}`;
+      throw new Error(errPayload.code ? `[${errPayload.code}] ${msg}` : msg);
     }
 
     this.token = data.token || data.accessToken;
@@ -179,7 +181,19 @@ class AdminClient {
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(data.message || `Request to ${pathUrl} failed with HTTP ${res.status}`);
+      const errPayload = data.error || data;
+      let msg = errPayload.message || data.message || `Request to ${pathUrl} failed with HTTP ${res.status}`;
+      if (errPayload.details && Array.isArray(errPayload.details) && errPayload.details.length > 0) {
+        const detailsStr = errPayload.details
+          .map((d) => (d.path ? `[${d.path}]: ${d.message}` : d.message))
+          .join(', ');
+        msg += ` | جزییات: ${detailsStr}`;
+      }
+      const err = new Error(errPayload.code ? `[${errPayload.code}] ${msg}` : msg);
+      err.status = res.status;
+      err.code = errPayload.code;
+      err.details = errPayload.details;
+      throw err;
     }
     return data;
   }
@@ -196,6 +210,7 @@ async function watchJob(client, jobId) {
       job = await client.request('GET', `/v1/admin/jobs/${jobId}`);
     } catch (err) {
       console.error(`\n[ERROR] Failed to fetch job status: ${err.message}`);
+      process.exitCode = 1;
       break;
     }
 
@@ -218,7 +233,17 @@ async function watchJob(client, jobId) {
     }
 
     if (job.status === 'failed') {
-      process.stdout.write(`\n✗ Job failed: ${job.error || 'Unknown error'}\n`);
+      let errMsg = 'Unknown error';
+      if (typeof job.error === 'object' && job.error !== null) {
+        errMsg = job.error.message
+          ? job.error.code
+            ? `[${job.error.code}] ${job.error.message}`
+            : job.error.message
+          : job.error.code || JSON.stringify(job.error);
+      } else if (job.error) {
+        errMsg = String(job.error);
+      }
+      process.stdout.write(`\n✗ Job failed: ${errMsg}\n`);
       process.exitCode = 1;
       break;
     }
@@ -249,14 +274,16 @@ async function main() {
   const masterPassword = await promptSecure('Master Password: ');
   if (!masterPassword) {
     console.error('Master password is required.');
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   try {
     await client.login(masterPassword);
   } catch (err) {
     console.error(`[ERROR] Authentication failed: ${err.message}`);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   const hasWatch = commandArgs.includes('--watch');
@@ -287,15 +314,30 @@ async function main() {
       const name = commandArgs[0];
       if (!name || name.startsWith('--')) {
         console.error('Usage: pnpm db:manager create <name> [--user <username>] [--name <fullName>] [--pass <password>]');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
       const userIdx = commandArgs.indexOf('--user');
       const nameIdx = commandArgs.indexOf('--name');
       const passIdx = commandArgs.indexOf('--pass');
 
-      const adminUsername = userIdx !== -1 ? commandArgs[userIdx + 1] : 'admin';
-      const adminFullName = nameIdx !== -1 ? commandArgs[nameIdx + 1] : 'مدیر سیستم';
+      let adminUsername = userIdx !== -1 ? commandArgs[userIdx + 1] : null;
+      let adminFullName = nameIdx !== -1 ? commandArgs[nameIdx + 1] : null;
       let adminPassword = passIdx !== -1 ? commandArgs[passIdx + 1] : process.env.ADMIN_PASSWORD || null;
+
+      if (!adminUsername && process.stdin.isTTY) {
+        const uAns = await promptText('Admin username [admin]: ');
+        adminUsername = uAns || 'admin';
+      } else if (!adminUsername) {
+        adminUsername = 'admin';
+      }
+
+      if (!adminFullName && process.stdin.isTTY) {
+        const nAns = await promptText('Admin full name [مدیر اصلی]: ');
+        adminFullName = nAns || 'مدیر اصلی';
+      } else if (!adminFullName) {
+        adminFullName = 'مدیر اصلی';
+      }
 
       if (passIdx !== -1) {
         console.warn('\n[SECURITY WARNING] Passing passwords via --pass CLI flag records secrets in your terminal history.');
@@ -303,10 +345,28 @@ async function main() {
       }
 
       if (!adminPassword) {
-        adminPassword = await promptSecure(`Admin password for "${name}": `);
+        adminPassword = await promptSecure(`Admin password for "${name}" (min 10 characters): `);
         if (!adminPassword) {
-          console.error('Admin password is required.');
-          process.exit(1);
+          console.error('خطا: وارد کردن رمز عبور ادمین الزامی است.');
+          process.exitCode = 1;
+          return;
+        }
+        if (adminPassword.length < 10) {
+          console.error(`خطا: رمز عبور باید حداقل ۱۰ کاراکتر باشد. (طول وارد شده: ${adminPassword.length} کاراکتر)`);
+          process.exitCode = 1;
+          return;
+        }
+        const confirmPass = await promptSecure(`Confirm admin password for "${name}": `);
+        if (adminPassword !== confirmPass) {
+          console.error('خطا: تکرار رمز عبور با رمز وارد شده مطابقت ندارد.');
+          process.exitCode = 1;
+          return;
+        }
+      } else {
+        if (adminPassword.length < 10) {
+          console.error(`خطا: رمز عبور باید حداقل ۱۰ کاراکتر باشد. (طول وارد شده: ${adminPassword.length} کاراکتر)`);
+          process.exitCode = 1;
+          return;
         }
       }
 
@@ -329,7 +389,8 @@ async function main() {
       const target = commandArgs[1];
       if (!source || !target || source.startsWith('--') || target.startsWith('--')) {
         console.error('Usage: pnpm db:manager duplicate <source> <target> [--pass <admin_password>]');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
       const passIdx = commandArgs.indexOf('--pass');
       let adminPassword = passIdx !== -1 ? commandArgs[passIdx + 1] : process.env.ADMIN_PASSWORD || null;
@@ -355,7 +416,8 @@ async function main() {
       const name = commandArgs[0];
       if (!name) {
         console.error('Usage: pnpm db:manager backup <name>');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
       const res = await client.request('POST', `/v1/admin/databases/${name}/backups`);
       console.log(`Backup job queued. Job ID: ${res.jobId}`);
@@ -369,7 +431,8 @@ async function main() {
       const name = commandArgs[0];
       if (!name) {
         console.error('Usage: pnpm db:manager backups <name>');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
       const backups = await client.request('GET', `/v1/admin/databases/${name}/backups`);
       console.log(`\n--- Backups for ${name} ---`);
@@ -394,7 +457,8 @@ async function main() {
       const dest = commandArgs[2];
       if (!name || !filename || !dest) {
         console.error('Usage: pnpm db:manager download <name> <filename> <destination_path>');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
       const res = await client.request('GET', `/v1/admin/databases/${name}/backups/${filename}`);
       const arrayBuffer = await res.arrayBuffer();
@@ -410,12 +474,14 @@ async function main() {
       const zipPath = commandArgs[1];
       if (!name || !zipPath) {
         console.error('Usage: pnpm db:manager restore <name> <path_to_zip>');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
       const resolvedZip = path.resolve(zipPath);
       if (!fs.existsSync(resolvedZip)) {
         console.error(`Backup file not found at: ${resolvedZip}`);
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
 
       console.log(`Uploading backup zip (${(fs.statSync(resolvedZip).size / 1024 / 1024).toFixed(2)} MB)...`);
@@ -437,7 +503,8 @@ async function main() {
       const name = commandArgs[0];
       if (!name) {
         console.error('Usage: pnpm db:manager delete <name> [--confirm <name>]');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
       const confirmIdx = commandArgs.indexOf('--confirm');
       let confirmName = confirmIdx !== -1 ? commandArgs[confirmIdx + 1] : null;
@@ -459,7 +526,8 @@ async function main() {
       const name = commandArgs[0];
       if (!name) {
         console.error('Usage: pnpm db:manager upgrade <name>');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
       const res = await client.request('POST', `/v1/admin/databases/${name}/upgrade`);
       console.log(`Upgrade job queued. Job ID: ${res.jobId}`);
@@ -473,7 +541,8 @@ async function main() {
       const name = commandArgs[0];
       if (!name) {
         console.error('Usage: pnpm db:manager repair <name> [--confirm]');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
       const isConfirmed = commandArgs.includes('--confirm');
       if (!isConfirmed) {
@@ -495,7 +564,8 @@ async function main() {
       const state = commandArgs[1]?.toLowerCase();
       if (!name || (state !== 'on' && state !== 'off')) {
         console.error('Usage: pnpm db:manager maintenance <name> <on|off> [--reason <reason>] [--confirm]');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
       const reasonIdx = commandArgs.indexOf('--reason');
       const reason = reasonIdx !== -1 ? commandArgs[reasonIdx + 1] : 'manual';
@@ -515,7 +585,8 @@ async function main() {
       const host = commandArgs[1] && !commandArgs[1].startsWith('--') ? commandArgs[1] : null;
       if (!name) {
         console.error('Usage: pnpm db:manager domain <name> [hostname]');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
       await client.request('PUT', `/v1/admin/databases/${name}/domain`, {
         domain: host,
@@ -550,7 +621,8 @@ async function main() {
       const jobId = commandArgs[0];
       if (!jobId) {
         console.error('Usage: pnpm db:manager watch <jobId>');
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
       await watchJob(client, jobId);
       break;
@@ -582,11 +654,12 @@ async function main() {
 
     default:
       console.error(`Unknown command: "${command}". Use --help for available commands.`);
-      process.exit(1);
+      process.exitCode = 1;
+      return;
   }
 }
 
 main().catch((err) => {
   console.error(`\n[FATAL] ${err.message}`);
-  process.exit(1);
+  process.exitCode = 1;
 });

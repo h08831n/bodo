@@ -30,20 +30,29 @@ export const DatabaseListItemSchema = z.object({
 });
 export type DatabaseListItem = z.infer<typeof DatabaseListItemSchema>;
 
+export const CompanySlugSchema = z
+  .string()
+  .min(3, 'نام شرکت باید حداقل ۳ کاراکتر باشد')
+  .max(40, 'نام شرکت نباید بیشتر از ۴۰ کاراکتر باشد')
+  .regex(/^[a-z0-9_]+$/, 'نام شرکت فقط می‌تواند شامل حروف کوچک انگلیسی، اعداد و خط زیر باشد')
+  .refine((s) => !s.startsWith('tmp_'), 'نام شرکت نباید با tmp_ شروع شود')
+  .refine((s) => !s.includes('__'), 'نام شرکت نباید شامل دو خط زیر متوالی باشد')
+  .refine((s) => !s.endsWith('_'), 'نام شرکت نباید با خط زیر پایان یابد');
+
 export const CreateDatabaseRequestSchema = z.object({
-  name: z.string().min(3).max(63),
+  name: CompanySlugSchema,
   adminUsername: z
     .string()
-    .min(3)
-    .max(32)
-    .regex(/^[a-z0-9_]+$/, 'Username must be lowercase alphanumeric or underscore'),
-  adminFullName: z.string().min(2).max(100),
-  adminPassword: z.string().min(10, 'Password must be at least 10 characters'),
+    .min(3, 'نام کاربری باید حداقل ۳ کاراکتر باشد')
+    .max(32, 'نام کاربری نباید بیشتر از ۳۲ کاراکتر باشد')
+    .regex(/^[a-z0-9_]+$/, 'نام کاربری فقط می‌تواند شامل حروف کوچک انگلیسی، اعداد و خط زیر باشد'),
+  adminFullName: z.string().min(2, 'نام کامل مدیر باید حداقل ۲ کاراکتر باشد').max(100),
+  adminPassword: z.string().min(10, 'رمز عبور باید حداقل ۱۰ کاراکتر باشد'),
 });
 export type CreateDatabaseRequest = z.infer<typeof CreateDatabaseRequestSchema>;
 
 export const DuplicateDatabaseRequestSchema = z.object({
-  newName: z.string().min(3).max(63),
+  newName: CompanySlugSchema,
   neutralize: z.boolean().default(false),
 });
 export type DuplicateDatabaseRequest = z.infer<typeof DuplicateDatabaseRequestSchema>;
@@ -56,7 +65,7 @@ export const BackupListItemSchema = z.object({
 export type BackupListItem = z.infer<typeof BackupListItemSchema>;
 
 export const RestoreDatabaseRequestSchema = z.object({
-  newName: z.string().min(3).max(63),
+  newName: CompanySlugSchema,
   neutralize: z.boolean().default(false),
 });
 export type RestoreDatabaseRequest = z.infer<typeof RestoreDatabaseRequestSchema>;

@@ -1,10 +1,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { spawnSync } from 'child_process';
 import archiver from 'archiver';
 import pg from 'pg';
+import { ArgumentsHost } from '@nestjs/common';
+import type { Request } from 'express';
 import { getEnv } from '../../src/config/env.config';
 import { DatabaseManagerService } from '../../src/infra/database-manager/database-manager.service';
+import { DatabaseManagerController } from '../../src/infra/database-manager/database-manager.controller';
+import { GlobalExceptionFilter } from '../../src/common/filters/global-exception.filter';
 import { JobQueueService } from '../../src/infra/database-manager/job-queue.service';
 import { PgToolsService } from '../../src/infra/pg-tools/pg-tools.service';
 import { LocalPgToolsDriver } from '../../src/infra/pg-tools/local-pg-tools.driver';
@@ -55,6 +60,7 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
   let pgTools: PgToolsService;
   let dbManager: DatabaseManagerService;
   let jobQueue: JobQueueService;
+  let controller: DatabaseManagerController;
 
   let isDbConnected = false;
 
@@ -113,6 +119,7 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
     );
 
     jobQueue = new JobQueueService();
+    controller = new DatabaseManagerController(dbManager, jobQueue, new AdminAuditLogger());
 
     // Clean up any leftovers from previous test runs
     for (const db of [testDbName, duplicateDbName, restoreDbName]) {
@@ -676,5 +683,336 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
     expect(entry?.details?.token).toBe('******');
     expect(JSON.stringify(entry)).not.toContain('SUPER_SECRET_PASSWORD_123');
     expect(JSON.stringify(entry)).not.toContain('BEARER_SECRET_TOKEN_456');
+  });
+
+  describe('Test 23: Table-driven negative test suite for all admin endpoints', () => {
+    const mockReq = {
+      ip: '127.0.0.1',
+      requestId: 'test-req-negative',
+      headers: {},
+    } as unknown as Request;
+
+    const callControllerAndFilter = async (fn: () => Promise<unknown>) => {
+      try {
+        const result = await fn();
+        return { status: 200, body: result as Record<string, unknown> };
+      } catch (err: unknown) {
+        const filter = new GlobalExceptionFilter();
+        let capturedStatus = 500;
+        let capturedBody: Record<string, unknown> | null = null;
+        const jsonMock = jest.fn((b) => {
+          capturedBody = b;
+        });
+        const statusMock = jest.fn((s) => {
+          capturedStatus = s;
+          return { json: jsonMock };
+        });
+        const setHeaderMock = jest.fn();
+
+        const mockResponse = { status: statusMock, setHeader: setHeaderMock };
+        const mockRequest = { requestId: 'test-req-negative', ip: '127.0.0.1', headers: {} };
+
+        const host = {
+          switchToHttp: () => ({
+            getResponse: () => mockResponse,
+            getRequest: () => mockRequest,
+          }),
+        } as unknown as ArgumentsHost;
+
+        filter.catch(err, host);
+        return { status: capturedStatus, body: capturedBody };
+      }
+    };
+
+    it('POST /databases rejects weak password (<10 chars) with 400 VALIDATION_FAILED and adminPassword path', async () => {
+      const res = await callControllerAndFilter(() =>
+        controller.createDatabase(
+          {
+            name: 'validslug',
+            adminUsername: 'admin',
+            adminFullName: 'مدیر تستی',
+            adminPassword: '12345',
+          },
+          mockReq,
+        ),
+      );
+      expect(res.status).toBe(400);
+      expect(res.body?.error?.code).toBe('VALIDATION_FAILED');
+      expect(res.body?.error?.details).toBeDefined();
+      expect(
+        (res.body?.error?.details as Array<{ path?: string }>)?.some(
+          (d) => d.path === 'adminPassword',
+        ),
+      ).toBe(true);
+    });
+
+    it('POST /databases rejects invalid slug names with 400 VALIDATION_FAILED', async () => {
+      const res = await callControllerAndFilter(() =>
+        controller.createDatabase(
+          {
+            name: 'Invalid Name!',
+            adminUsername: 'admin',
+            adminFullName: 'مدیر تستی',
+            adminPassword: 'ValidPassword123!',
+          },
+          mockReq,
+        ),
+      );
+      expect(res.status).toBe(400);
+      expect(res.body?.error?.code).toBe('VALIDATION_FAILED');
+    });
+
+    it('POST /databases rejects duplicate database name with 409 DATABASE_ALREADY_EXISTS', async () => {
+      const res = await callControllerAndFilter(() =>
+        controller.createDatabase(
+          {
+            name: 'test_mgr_orig',
+            adminUsername: 'admin',
+            adminFullName: 'مدیر تستی',
+            adminPassword: 'ValidPassword123!',
+          },
+          mockReq,
+        ),
+      );
+      expect(res.status).toBe(409);
+      expect(res.body?.error?.code).toBe('DATABASE_ALREADY_EXISTS');
+    });
+
+    it('DELETE /databases/:name rejects non-existent database with 404 DATABASE_NOT_FOUND without queuing job', async () => {
+      const res = await callControllerAndFilter(() =>
+        controller.deleteDatabase(
+          'nonexistent_db_xyz',
+          { confirmName: 'nonexistent_db_xyz' },
+          mockReq,
+        ),
+      );
+      expect(res.status).toBe(404);
+      expect(res.body?.error?.code).toBe('DATABASE_NOT_FOUND');
+    });
+
+    it('DELETE /databases/:name rejects mismatched confirmName with 400 VALIDATION_FAILED', async () => {
+      const res = await callControllerAndFilter(() =>
+        controller.deleteDatabase(
+          'test_mgr_orig',
+          { confirmName: 'wrong_confirmation_name' },
+          mockReq,
+        ),
+      );
+      expect(res.status).toBe(400);
+      expect(res.body?.error?.code).toBe('VALIDATION_FAILED');
+    });
+
+    it('POST /databases/:name/backups rejects non-existent database with 404 DATABASE_NOT_FOUND', async () => {
+      const res = await callControllerAndFilter(() =>
+        controller.createBackup('nonexistent_db_xyz', mockReq),
+      );
+      expect(res.status).toBe(404);
+      expect(res.body?.error?.code).toBe('DATABASE_NOT_FOUND');
+    });
+
+    it('GET /databases/:name/backups rejects non-existent database with 404 DATABASE_NOT_FOUND', async () => {
+      const res = await callControllerAndFilter(() => controller.listBackups('nonexistent_db_xyz'));
+      expect(res.status).toBe(404);
+      expect(res.body?.error?.code).toBe('DATABASE_NOT_FOUND');
+    });
+
+    it('POST /databases/:name/duplicate rejects non-existent source database with 404 DATABASE_NOT_FOUND', async () => {
+      const res = await callControllerAndFilter(() =>
+        controller.duplicateDatabase(
+          'nonexistent_source_xyz',
+          { newName: 'new_dup_db', neutralize: false },
+          mockReq,
+        ),
+      );
+      expect(res.status).toBe(404);
+      expect(res.body?.error?.code).toBe('DATABASE_NOT_FOUND');
+    });
+
+    it('POST /databases/:name/duplicate rejects existing target database with 409 DATABASE_ALREADY_EXISTS', async () => {
+      const res = await callControllerAndFilter(() =>
+        controller.duplicateDatabase(
+          'test_mgr_orig',
+          { newName: 'test_mgr_orig', neutralize: false },
+          mockReq,
+        ),
+      );
+      expect(res.status).toBe(409);
+      expect(res.body?.error?.code).toBe('DATABASE_ALREADY_EXISTS');
+    });
+
+    it('POST /databases/:name/upgrade rejects non-existent database with 404 DATABASE_NOT_FOUND', async () => {
+      const res = await callControllerAndFilter(() =>
+        controller.upgradeDatabase('nonexistent_db_xyz', {}, mockReq),
+      );
+      expect(res.status).toBe(404);
+      expect(res.body?.error?.code).toBe('DATABASE_NOT_FOUND');
+    });
+
+    it('POST /databases/:name/repair rejects non-existent database with 404 DATABASE_NOT_FOUND', async () => {
+      const res = await callControllerAndFilter(() =>
+        controller.repairDatabase('nonexistent_db_xyz', { confirm: true }, mockReq),
+      );
+      expect(res.status).toBe(404);
+      expect(res.body?.error?.code).toBe('DATABASE_NOT_FOUND');
+    });
+
+    it('POST /databases/:name/maintenance rejects non-existent database with 404 DATABASE_NOT_FOUND', async () => {
+      const res = await callControllerAndFilter(() =>
+        controller.setMaintenance('nonexistent_db_xyz', { enabled: true }, mockReq),
+      );
+      expect(res.status).toBe(404);
+      expect(res.body?.error?.code).toBe('DATABASE_NOT_FOUND');
+    });
+
+    it('PUT /databases/:name/domain rejects non-existent database with 404 DATABASE_NOT_FOUND', async () => {
+      const res = await callControllerAndFilter(() =>
+        controller.setDomain('nonexistent_db_xyz', { host: 'sub.domain.local' }, mockReq),
+      );
+      expect(res.status).toBe(404);
+      expect(res.body?.error?.code).toBe('DATABASE_NOT_FOUND');
+    });
+
+    it('Rejects concurrent destructive operation on locked database with 409 DATABASE_BUSY', async () => {
+      await jobQueue.acquireDatabaseLock('erp_test_mgr_orig', 'holder-job-concurrent', 30);
+      try {
+        const res = await callControllerAndFilter(() =>
+          controller.createBackup('test_mgr_orig', mockReq),
+        );
+        expect(res.status).toBe(409);
+        expect(res.body?.error?.code).toBe('DATABASE_BUSY');
+      } finally {
+        await jobQueue.releaseDatabaseLock('erp_test_mgr_orig', 'holder-job-concurrent');
+      }
+    });
+  });
+
+  describe('Test 24: Fuzzing tests guarantee ZERO 500 errors on invalid inputs across admin endpoints', () => {
+    const mockReq = {
+      ip: '127.0.0.1',
+      requestId: 'test-req-fuzz',
+      headers: {},
+    } as unknown as Request;
+
+    const callControllerAndFilter = async (fn: () => Promise<unknown>) => {
+      try {
+        const result = await fn();
+        return { status: 200, body: result as Record<string, unknown> };
+      } catch (err: unknown) {
+        const filter = new GlobalExceptionFilter();
+        let capturedStatus = 500;
+        let capturedBody: Record<string, unknown> | null = null;
+        const jsonMock = jest.fn((b) => {
+          capturedBody = b;
+        });
+        const statusMock = jest.fn((s) => {
+          capturedStatus = s;
+          return { json: jsonMock };
+        });
+        const setHeaderMock = jest.fn();
+
+        const mockResponse = { status: statusMock, setHeader: setHeaderMock };
+        const mockRequest = { requestId: 'test-req-fuzz', ip: '127.0.0.1', headers: {} };
+
+        const host = {
+          switchToHttp: () => ({
+            getResponse: () => mockResponse,
+            getRequest: () => mockRequest,
+          }),
+        } as unknown as ArgumentsHost;
+
+        filter.catch(err, host);
+        return { status: capturedStatus, body: capturedBody };
+      }
+    };
+
+    const fuzzBodies = [
+      {}, // Empty body
+      null, // Null value
+      { name: 12345, adminPassword: true }, // Wrong data types
+      { name: 'a'.repeat(5000), adminPassword: 'p'.repeat(5000) }, // Ultra-long string
+      { name: '<script>alert("xss")</script>', adminUsername: 'DROP TABLE;' }, // Injection string
+    ];
+
+    for (let i = 0; i < fuzzBodies.length; i++) {
+      it(`POST /databases with fuzz payload #${i + 1} returns 4xx and never 500`, async () => {
+        const res = await callControllerAndFilter(() =>
+          controller.createDatabase(fuzzBodies[i], mockReq),
+        );
+        expect(res.status).toBeGreaterThanOrEqual(400);
+        expect(res.status).toBeLessThan(500);
+        expect(res.body?.error?.code).not.toBe('INTERNAL');
+        expect(res.body?.error?.message).toBeDefined();
+        expect(res.body?.error?.requestId).toBeDefined();
+      });
+
+      it(`POST /databases/:name/duplicate with fuzz payload #${i + 1} returns 4xx and never 500`, async () => {
+        const res = await callControllerAndFilter(() =>
+          controller.duplicateDatabase('test_mgr_orig', fuzzBodies[i], mockReq),
+        );
+        expect(res.status).toBeGreaterThanOrEqual(400);
+        expect(res.status).toBeLessThan(500);
+        expect(res.body?.error?.code).not.toBe('INTERNAL');
+      });
+
+      it(`DELETE /databases/:name with fuzz payload #${i + 1} returns 4xx and never 500`, async () => {
+        const res = await callControllerAndFilter(() =>
+          controller.deleteDatabase('test_mgr_orig', fuzzBodies[i], mockReq),
+        );
+        expect(res.status).toBeGreaterThanOrEqual(400);
+        expect(res.status).toBeLessThan(500);
+        expect(res.body?.error?.code).not.toBe('INTERNAL');
+      });
+    }
+  });
+
+  describe('Test 25: Automated CLI non-interactive execution tests with invalid inputs', () => {
+    it('CLI rejects password <10 characters with non-zero exit code and informative message', () => {
+      const cliPath = path.resolve(__dirname, '../../../../scripts/db-manager.mjs');
+      const result = spawnSync('node', [cliPath, 'create', 'testcli_db', '--pass', '12345'], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          MASTER_PASSWORD: 'MasterSecurePassword2026!',
+        },
+      });
+
+      expect(result.status).not.toBe(0);
+      const combinedOutput = (result.stdout || '') + (result.stderr || '');
+      expect(combinedOutput).toMatch(/حداقل ۱۰ کاراکتر/);
+    });
+
+    it('CLI rejects delete on non-existent database with non-zero exit code and DATABASE_NOT_FOUND', () => {
+      const cliPath = path.resolve(__dirname, '../../../../scripts/db-manager.mjs');
+      const result = spawnSync(
+        'node',
+        [cliPath, 'delete', 'nonexistent_test_cli_db', '--confirm', 'nonexistent_test_cli_db'],
+        {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            MASTER_PASSWORD: 'MasterSecurePassword2026!',
+          },
+        },
+      );
+
+      expect(result.status).not.toBe(0);
+      const combinedOutput = (result.stdout || '') + (result.stderr || '');
+      expect(combinedOutput).toMatch(/DATABASE_NOT_FOUND|یافت نشد/);
+    });
+
+    it('CLI rejects create command without name argument with non-zero exit code', () => {
+      const cliPath = path.resolve(__dirname, '../../../../scripts/db-manager.mjs');
+      const result = spawnSync('node', [cliPath, 'create'], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          MASTER_PASSWORD: 'MasterSecurePassword2026!',
+        },
+      });
+
+      expect(result.status).not.toBe(0);
+      const combinedOutput = (result.stdout || '') + (result.stderr || '');
+      expect(combinedOutput).toMatch(/Usage:/);
+    });
   });
 });

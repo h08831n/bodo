@@ -1,6 +1,6 @@
 import { Worker, Job } from 'bullmq';
 import Redis from 'ioredis';
-import { Logger } from '@nestjs/common';
+import { Logger, HttpException } from '@nestjs/common';
 import { getEnv } from '../../config/env.config';
 import { DatabaseManagerService } from './database-manager.service';
 import { JobQueueService, AdminJobData } from './job-queue.service';
@@ -171,7 +171,33 @@ export class AdminWorkerRunner {
 
       return result;
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
+      let code = 'INTERNAL';
+      let message = err instanceof Error ? err.message : String(err);
+
+      if (err instanceof HttpException) {
+        const res = err.getResponse();
+        if (typeof res === 'object' && res !== null) {
+          const obj = res as Record<string, unknown>;
+          if (typeof obj.code === 'string') code = obj.code;
+          if (typeof obj.message === 'string') message = obj.message;
+        }
+      } else {
+        if (/not found/i.test(message)) {
+          code = 'DATABASE_NOT_FOUND';
+          message = 'پایگاه داده مورد نظر یافت نشد.';
+        } else if (/already exists/i.test(message)) {
+          code = 'DATABASE_ALREADY_EXISTS';
+          message = 'پایگاه داده با این نام از قبل موجود است.';
+        } else if (/locked|busy/i.test(message)) {
+          code = 'DATABASE_BUSY';
+          message = 'پایگاه داده در حال حاضر توسط عملیات دیگری قفل شده است.';
+        } else if (/checksum mismatch/i.test(message)) {
+          code = 'CORRUPTED_ARCHIVE';
+          message = 'فایل پشتیبان نامعتبر است یا تمامیت آن مخدوش شده است.';
+        }
+      }
+
+      const serializedErr = JSON.stringify({ code, message });
       this.auditLogger?.log({
         ip: clientIp,
         action: actionName,
@@ -179,9 +205,9 @@ export class AdminWorkerRunner {
         status: 'FAILURE',
         jobId,
         requestId,
-        error: errorMsg,
+        error: `${code}: ${message}`,
       });
-      throw err;
+      throw new Error(serializedErr);
     } finally {
       // Always release distributed lock in finally
       await this.jobQueue.releaseDatabaseLock(database, jobId);

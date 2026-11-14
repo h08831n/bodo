@@ -88,7 +88,11 @@ export class MasterAdminGuard implements CanActivate {
   }
 
   private extractClientIp(req: Request): string {
-    // In express with trust proxy, req.ip reflects the client IP as forwarded by trusted proxy (Nginx).
+    // If behind reverse proxy (Nginx), X-Real-IP is unconditionally set from $remote_addr
+    const realIp = (req.headers['x-real-ip'] as string)?.trim();
+    if (realIp) {
+      return realIp;
+    }
     return req.ip || req.socket.remoteAddress || '127.0.0.1';
   }
 }

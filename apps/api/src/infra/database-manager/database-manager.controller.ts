@@ -14,6 +14,7 @@ import {
   Query,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   HttpStatus,
   HttpCode,
 } from '@nestjs/common';
@@ -26,6 +27,7 @@ import {
   DuplicateDatabaseRequestSchema,
   RestoreDatabaseRequestSchema,
   DeleteDatabaseRequestSchema,
+  UpgradeDatabaseRequestSchema,
   RepairDatabaseRequestSchema,
   SetMaintenanceRequestSchema,
   SetDomainRequestSchema,
@@ -49,7 +51,8 @@ export class DatabaseManagerController {
   ) {}
 
   private getRequestMeta(req: Request) {
-    const clientIp = req.ip || req.socket.remoteAddress || '127.0.0.1';
+    const realIp = (req.headers['x-real-ip'] as string)?.trim();
+    const clientIp = realIp || req.ip || req.socket.remoteAddress || '127.0.0.1';
     const requestId = req.requestId || (req.headers['x-request-id'] as string) || 'N/A';
     return { clientIp, requestId };
   }
@@ -65,6 +68,24 @@ export class DatabaseManagerController {
     const { clientIp, requestId } = this.getRequestMeta(req);
     const body = CreateDatabaseRequestSchema.parse(rawBody);
     const dbName = `erp_${body.name.toLowerCase().trim()}`;
+
+    // 1. Check if database already exists
+    const exists = await this.dbManager.checkDatabaseExists(dbName);
+    if (exists) {
+      throw new ConflictException({
+        code: 'DATABASE_ALREADY_EXISTS',
+        message: `پایگاه داده "${dbName}" از قبل موجود است.`,
+      });
+    }
+
+    // 2. Check if database is locked in Redis
+    const isLocked = await this.jobQueue.isDatabaseLocked(dbName);
+    if (isLocked) {
+      throw new ConflictException({
+        code: 'DATABASE_BUSY',
+        message: `پایگاه داده "${dbName}" در حال حاضر توسط عملیات دیگری قفل شده است.`,
+      });
+    }
 
     // Acquire database lock in Redis (Requirement: max 1 destructive op per database)
     const jobId = await this.jobQueue.enqueueJob(
@@ -95,8 +116,38 @@ export class DatabaseManagerController {
     @Req() req: Request,
   ): Promise<{ jobId: string }> {
     const { clientIp, requestId } = this.getRequestMeta(req);
+    const sourceDb = name.startsWith('erp_') ? name : `erp_${name}`;
+
+    // 1. Check if source database exists
+    const sourceExists = await this.dbManager.checkDatabaseExists(sourceDb);
+    if (!sourceExists) {
+      throw new NotFoundException({
+        code: 'DATABASE_NOT_FOUND',
+        message: `پایگاه داده مبدأ "${sourceDb}" یافت نشد.`,
+      });
+    }
+
     const body = DuplicateDatabaseRequestSchema.parse(rawBody);
     const targetDbName = `erp_${body.newName.toLowerCase().trim()}`;
+
+    // 2. Check if target database already exists
+    const targetExists = await this.dbManager.checkDatabaseExists(targetDbName);
+    if (targetExists) {
+      throw new ConflictException({
+        code: 'DATABASE_ALREADY_EXISTS',
+        message: `پایگاه داده مقصد "${targetDbName}" از قبل موجود است.`,
+      });
+    }
+
+    // 3. Check locks on both databases
+    const isSourceLocked = await this.jobQueue.isDatabaseLocked(sourceDb);
+    const isTargetLocked = await this.jobQueue.isDatabaseLocked(targetDbName);
+    if (isSourceLocked || isTargetLocked) {
+      throw new ConflictException({
+        code: 'DATABASE_BUSY',
+        message: 'پایگاه داده در حال حاضر توسط عملیات دیگری قفل شده است.',
+      });
+    }
 
     const jobId = await this.jobQueue.enqueueJob(
       'duplicate',
@@ -126,6 +177,24 @@ export class DatabaseManagerController {
   async createBackup(@Param('name') name: string, @Req() req: Request): Promise<{ jobId: string }> {
     const { clientIp, requestId } = this.getRequestMeta(req);
     const dbName = name.startsWith('erp_') ? name : `erp_${name}`;
+
+    // Check if database exists
+    const exists = await this.dbManager.checkDatabaseExists(dbName);
+    if (!exists) {
+      throw new NotFoundException({
+        code: 'DATABASE_NOT_FOUND',
+        message: `پایگاه داده "${dbName}" یافت نشد.`,
+      });
+    }
+
+    const isLocked = await this.jobQueue.isDatabaseLocked(dbName);
+    if (isLocked) {
+      throw new ConflictException({
+        code: 'DATABASE_BUSY',
+        message: `پایگاه داده "${dbName}" در حال حاضر توسط عملیات دیگری قفل شده است.`,
+      });
+    }
+
     const jobId = await this.jobQueue.enqueueJob('backup', dbName, {}, { requestId, clientIp });
 
     this.auditLogger.log({
@@ -141,19 +210,36 @@ export class DatabaseManagerController {
   }
 
   @Get('databases/:name/backups')
-  listBackups(@Param('name') name: string): BackupListItem[] {
+  async listBackups(@Param('name') name: string): Promise<BackupListItem[]> {
+    const dbName = name.startsWith('erp_') ? name : `erp_${name}`;
+    const exists = await this.dbManager.checkDatabaseExists(dbName);
+    if (!exists) {
+      throw new NotFoundException({
+        code: 'DATABASE_NOT_FOUND',
+        message: `پایگاه داده "${dbName}" یافت نشد.`,
+      });
+    }
     return this.dbManager.listBackups(name);
   }
 
   @Get('databases/:name/backups/:file')
-  downloadBackup(
+  async downloadBackup(
     @Param('name') name: string,
     @Param('file') file: string,
     @Res() res: Response,
     @Req() req: Request,
-  ): void {
+  ): Promise<void> {
     const { clientIp, requestId } = this.getRequestMeta(req);
     const dbName = name.startsWith('erp_') ? name : `erp_${name}`;
+
+    const dbExists = await this.dbManager.checkDatabaseExists(dbName);
+    if (!dbExists) {
+      throw new NotFoundException({
+        code: 'DATABASE_NOT_FOUND',
+        message: `پایگاه داده "${dbName}" یافت نشد.`,
+      });
+    }
+
     // Sanitize filename against path traversal
     const safeFile = path.basename(file);
     const filePath = path.resolve(getEnv().BACKUP_DIR, dbName, safeFile);
@@ -168,7 +254,10 @@ export class DatabaseManagerController {
         requestId,
         error: `Backup file "${safeFile}" not found`,
       });
-      throw new NotFoundException(`Backup file "${safeFile}" not found`);
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: `فایل بکاپ "${safeFile}" یافت نشد.`,
+      });
     }
 
     this.auditLogger.log({
@@ -186,13 +275,22 @@ export class DatabaseManagerController {
   }
 
   @Delete('databases/:name/backups/:file')
-  deleteBackup(
+  async deleteBackup(
     @Param('name') name: string,
     @Param('file') file: string,
     @Req() req: Request,
-  ): { message: string } {
+  ): Promise<{ message: string }> {
     const { clientIp, requestId } = this.getRequestMeta(req);
     const dbName = name.startsWith('erp_') ? name : `erp_${name}`;
+
+    const dbExists = await this.dbManager.checkDatabaseExists(dbName);
+    if (!dbExists) {
+      throw new NotFoundException({
+        code: 'DATABASE_NOT_FOUND',
+        message: `پایگاه داده "${dbName}" یافت نشد.`,
+      });
+    }
+
     const safeFile = path.basename(file);
     const filePath = path.resolve(getEnv().BACKUP_DIR, dbName, safeFile);
 
@@ -206,7 +304,10 @@ export class DatabaseManagerController {
         requestId,
         error: `Backup file "${safeFile}" not found`,
       });
-      throw new NotFoundException(`Backup file "${safeFile}" not found`);
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: `فایل بکاپ "${safeFile}" یافت نشد.`,
+      });
     }
 
     fs.unlinkSync(filePath);
@@ -218,9 +319,9 @@ export class DatabaseManagerController {
       status: 'SUCCESS',
       requestId,
     });
+
     return { message: `Backup file "${safeFile}" deleted successfully` };
   }
-
   @Post('databases/restore')
   @HttpCode(HttpStatus.ACCEPTED)
   @UseInterceptors(
@@ -252,11 +353,33 @@ export class DatabaseManagerController {
         requestId,
         error: 'A valid backup zip file or filePath is required',
       });
-      throw new BadRequestException('A valid backup zip file or filePath is required');
+      throw new BadRequestException({
+        code: 'VALIDATION_FAILED',
+        message: 'فایل معتبر پشتیبان برای بازیابی الزامی است.',
+        details: [{ path: 'file', message: 'A valid backup zip file or filePath is required' }],
+      });
     }
 
     const body = RestoreDatabaseRequestSchema.parse(rawBody);
     const targetDbName = `erp_${body.newName.toLowerCase().trim()}`;
+
+    // 1. Check if target database already exists
+    const exists = await this.dbManager.checkDatabaseExists(targetDbName);
+    if (exists) {
+      throw new ConflictException({
+        code: 'DATABASE_ALREADY_EXISTS',
+        message: `پایگاه داده مقصد "${targetDbName}" از قبل موجود است.`,
+      });
+    }
+
+    // 2. Check lock
+    const isLocked = await this.jobQueue.isDatabaseLocked(targetDbName);
+    if (isLocked) {
+      throw new ConflictException({
+        code: 'DATABASE_BUSY',
+        message: `پایگاه داده "${targetDbName}" در حال حاضر توسط عملیات دیگری قفل شده است.`,
+      });
+    }
 
     const jobId = await this.jobQueue.enqueueJob(
       'restore',
@@ -288,8 +411,41 @@ export class DatabaseManagerController {
     @Req() req: Request,
   ): Promise<{ jobId: string }> {
     const { clientIp, requestId } = this.getRequestMeta(req);
-    const body = DeleteDatabaseRequestSchema.parse(rawBody);
     const dbName = name.startsWith('erp_') ? name : `erp_${name}`;
+    const slug = dbName.replace(/^erp_/, '');
+
+    // 1. Check if database exists FIRST before enqueueing any job
+    const exists = await this.dbManager.checkDatabaseExists(dbName);
+    if (!exists) {
+      throw new NotFoundException({
+        code: 'DATABASE_NOT_FOUND',
+        message: `پایگاه داده "${dbName}" یافت نشد.`,
+      });
+    }
+
+    // 2. Validate confirmation name
+    const body = DeleteDatabaseRequestSchema.parse(rawBody);
+    if (body.confirmName !== dbName && body.confirmName !== slug && body.confirmName !== name) {
+      throw new BadRequestException({
+        code: 'VALIDATION_FAILED',
+        message: 'نام تایید شده با نام پایگاه داده مطابقت ندارد.',
+        details: [
+          {
+            path: 'confirmName',
+            message: `Confirmation name "${body.confirmName}" does not match target database "${slug}"`,
+          },
+        ],
+      });
+    }
+
+    // 3. Check lock
+    const isLocked = await this.jobQueue.isDatabaseLocked(dbName);
+    if (isLocked) {
+      throw new ConflictException({
+        code: 'DATABASE_BUSY',
+        message: `پایگاه داده "${dbName}" در حال حاضر توسط عملیات دیگری قفل شده است.`,
+      });
+    }
 
     const jobId = await this.jobQueue.enqueueJob(
       'delete',
@@ -316,11 +472,35 @@ export class DatabaseManagerController {
   @HttpCode(HttpStatus.ACCEPTED)
   async upgradeDatabase(
     @Param('name') name: string,
+    @Body() rawBody: unknown,
     @Req() req: Request,
   ): Promise<{ jobId: string }> {
     const { clientIp, requestId } = this.getRequestMeta(req);
     const dbName = name.startsWith('erp_') ? name : `erp_${name}`;
-    const jobId = await this.jobQueue.enqueueJob('upgrade', dbName, {}, { requestId, clientIp });
+
+    const exists = await this.dbManager.checkDatabaseExists(dbName);
+    if (!exists) {
+      throw new NotFoundException({
+        code: 'DATABASE_NOT_FOUND',
+        message: `پایگاه داده "${dbName}" یافت نشد.`,
+      });
+    }
+
+    const isLocked = await this.jobQueue.isDatabaseLocked(dbName);
+    if (isLocked) {
+      throw new ConflictException({
+        code: 'DATABASE_BUSY',
+        message: `پایگاه داده "${dbName}" در حال حاضر توسط عملیات دیگری قفل شده است.`,
+      });
+    }
+
+    const body = UpgradeDatabaseRequestSchema.parse(rawBody || {});
+    const jobId = await this.jobQueue.enqueueJob(
+      'upgrade',
+      dbName,
+      body as Record<string, unknown>,
+      { requestId, clientIp },
+    );
 
     this.auditLogger.log({
       ip: clientIp,
@@ -341,6 +521,16 @@ export class DatabaseManagerController {
     @Req() req: Request,
   ): Promise<{ message: string; rolledBackMigration?: string }> {
     const { clientIp, requestId } = this.getRequestMeta(req);
+    const dbName = name.startsWith('erp_') ? name : `erp_${name}`;
+
+    const exists = await this.dbManager.checkDatabaseExists(dbName);
+    if (!exists) {
+      throw new NotFoundException({
+        code: 'DATABASE_NOT_FOUND',
+        message: `پایگاه داده "${dbName}" یافت نشد.`,
+      });
+    }
+
     const body = RepairDatabaseRequestSchema.parse(rawBody);
 
     try {
@@ -375,6 +565,16 @@ export class DatabaseManagerController {
     @Req() req: Request,
   ): Promise<{ message: string }> {
     const { clientIp, requestId } = this.getRequestMeta(req);
+    const dbName = name.startsWith('erp_') ? name : `erp_${name}`;
+
+    const exists = await this.dbManager.checkDatabaseExists(dbName);
+    if (!exists) {
+      throw new NotFoundException({
+        code: 'DATABASE_NOT_FOUND',
+        message: `پایگاه داده "${dbName}" یافت نشد.`,
+      });
+    }
+
     const body = SetMaintenanceRequestSchema.parse(rawBody);
 
     try {
@@ -411,6 +611,16 @@ export class DatabaseManagerController {
     @Req() req: Request,
   ): Promise<{ message: string }> {
     const { clientIp, requestId } = this.getRequestMeta(req);
+    const dbName = name.startsWith('erp_') ? name : `erp_${name}`;
+
+    const exists = await this.dbManager.checkDatabaseExists(dbName);
+    if (!exists) {
+      throw new NotFoundException({
+        code: 'DATABASE_NOT_FOUND',
+        message: `پایگاه داده "${dbName}" یافت نشد.`,
+      });
+    }
+
     const body = SetDomainRequestSchema.parse(rawBody);
 
     try {

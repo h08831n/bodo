@@ -68,6 +68,15 @@ export class JobQueueService implements OnModuleDestroy {
   }
 
   /**
+   * Checks if a database is currently locked by an active operation.
+   */
+  async isDatabaseLocked(database: string): Promise<boolean> {
+    const key = `admin:lock:${database}`;
+    const current = await this.redisClient.get(key);
+    return current !== null;
+  }
+
+  /**
    * Releases the distributed lock for a database.
    */
   async releaseDatabaseLock(database: string, jobId: string): Promise<void> {
@@ -148,10 +157,36 @@ export class JobQueueService implements OnModuleDestroy {
 
     let errorObj: { code: string; message: string } | undefined;
     if (job.failedReason) {
-      errorObj = {
-        code: 'INTERNAL',
-        message: job.failedReason,
-      };
+      try {
+        const parsed = JSON.parse(job.failedReason);
+        if (parsed && typeof parsed === 'object' && parsed.message) {
+          errorObj = {
+            code: parsed.code || 'INTERNAL',
+            message: parsed.message,
+          };
+        }
+      } catch {
+        // Not a JSON string
+      }
+
+      if (!errorObj) {
+        let code = 'INTERNAL';
+        let message = job.failedReason;
+        if (/not found/i.test(job.failedReason)) {
+          code = 'DATABASE_NOT_FOUND';
+          message = 'پایگاه داده مورد نظر یافت نشد.';
+        } else if (/locked|busy/i.test(job.failedReason)) {
+          code = 'DATABASE_BUSY';
+          message = 'پایگاه داده در حال حاضر توسط عملیات دیگری قفل شده است.';
+        } else if (/already exists/i.test(job.failedReason)) {
+          code = 'DATABASE_ALREADY_EXISTS';
+          message = 'پایگاه داده با این نام از قبل موجود است.';
+        } else if (/checksum mismatch|corrupted/i.test(job.failedReason)) {
+          code = 'CORRUPTED_ARCHIVE';
+          message = 'فایل پشتیبان نامعتبر است یا تمامیت آن مخدوش شده است.';
+        }
+        errorObj = { code, message };
+      }
     }
 
     return {

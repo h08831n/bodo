@@ -841,7 +841,7 @@ export class DatabaseManagerService implements OnApplicationBootstrap {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
-  private async checkDatabaseExists(dbName: string): Promise<boolean> {
+  async checkDatabaseExists(dbName: string): Promise<boolean> {
     const client = this.getPostgresClient('provisioner');
     await client.connect();
     try {
