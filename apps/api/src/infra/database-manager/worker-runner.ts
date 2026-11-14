@@ -160,6 +160,8 @@ export class AdminWorkerRunner {
           throw new Error(`Unknown job type: "${type}"`);
       }
 
+      await onProgress(100, 'completed', 'عملیات با موفقیت انجام شد.');
+
       this.auditLogger?.log({
         ip: clientIp,
         action: actionName,

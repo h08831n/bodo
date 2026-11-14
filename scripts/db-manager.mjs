@@ -35,7 +35,6 @@ Commands:
     [--pass <password>]           Admin password (prompted if omitted)
     [--watch]                     Watch job progress until completed
   duplicate <source> <target>   Duplicate an existing tenant database
-    [--pass <password>]           New admin password (prompted if omitted)
     [--watch]                     Watch job progress until completed
   backup <name>                 Create a backup of a tenant database
     [--watch]                     Watch job progress until completed
@@ -61,6 +60,16 @@ Commands:
 Options:
   --url <url>                   Base URL of the Bodo API (default: ${API_BASE})
   --help, -h                    Show this help message
+
+Authentication & Passwords:
+  All CLI commands require the Bodo Master Password. You can supply it via:
+  1. Interactive hidden prompt (prompted automatically)
+  2. MASTER_PASSWORD or MASTER_PASSWORD_INITIAL environment variable
+
+  For 'create', the initial tenant admin password can be supplied via:
+  1. Interactive hidden prompt with confirmation (recommended, min 10 chars)
+  2. ADMIN_PASSWORD environment variable
+  3. [--pass <password>] flag (warns because shell history may expose secrets)
 `);
 }
 
@@ -225,7 +234,8 @@ async function watchJob(client, jobId) {
     }
 
     if (job.status === 'completed') {
-      process.stdout.write(`\n✓ Job completed successfully!\n`);
+      process.stdout.write(`\r  [100%] completed: عملیات با موفقیت انجام شد.\n`.padEnd(70));
+      process.stdout.write(`✓ Job completed successfully!\n`);
       if (job.result) {
         console.log('Result:', JSON.stringify(job.result, null, 2));
       }
@@ -388,21 +398,13 @@ async function main() {
       const source = commandArgs[0];
       const target = commandArgs[1];
       if (!source || !target || source.startsWith('--') || target.startsWith('--')) {
-        console.error('Usage: pnpm db:manager duplicate <source> <target> [--pass <admin_password>]');
+        console.error('Usage: pnpm db:manager duplicate <source> <target> [--watch]');
         process.exitCode = 1;
         return;
-      }
-      const passIdx = commandArgs.indexOf('--pass');
-      let adminPassword = passIdx !== -1 ? commandArgs[passIdx + 1] : process.env.ADMIN_PASSWORD || null;
-
-      if (passIdx !== -1) {
-        console.warn('\n[SECURITY WARNING] Passing passwords via --pass CLI flag records secrets in your terminal history.');
-        console.warn('                   Consider interactive prompting or setting the ADMIN_PASSWORD environment variable.\n');
       }
 
       const res = await client.request('POST', `/v1/admin/databases/${source}/duplicate`, {
         newName: target,
-        adminPassword: adminPassword || undefined,
       });
 
       console.log(`Duplication job queued. Job ID: ${res.jobId}`);
