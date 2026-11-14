@@ -685,6 +685,15 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
     expect(JSON.stringify(entry)).not.toContain('BEARER_SECRET_TOKEN_456');
   });
 
+  interface ApiResponseError {
+    error?: {
+      code?: string;
+      message?: string;
+      details?: Array<{ path?: string; message?: string }>;
+      requestId?: string;
+    };
+  }
+
   describe('Test 23: Table-driven negative test suite for all admin endpoints', () => {
     const mockReq = {
       ip: '127.0.0.1',
@@ -692,18 +701,20 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
       headers: {},
     } as unknown as Request;
 
-    const callControllerAndFilter = async (fn: () => Promise<unknown>) => {
+    const callControllerAndFilter = async (
+      fn: () => Promise<unknown>,
+    ): Promise<{ status: number; body: ApiResponseError }> => {
       try {
         const result = await fn();
-        return { status: 200, body: result as Record<string, unknown> };
+        return { status: 200, body: result as ApiResponseError };
       } catch (err: unknown) {
         const filter = new GlobalExceptionFilter();
         let capturedStatus = 500;
-        let capturedBody: Record<string, unknown> | null = null;
-        const jsonMock = jest.fn((b) => {
+        let capturedBody: ApiResponseError = {};
+        const jsonMock = jest.fn((b: ApiResponseError) => {
           capturedBody = b;
         });
-        const statusMock = jest.fn((s) => {
+        const statusMock = jest.fn((s: number) => {
           capturedStatus = s;
           return { json: jsonMock };
         });
@@ -893,18 +904,20 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
       headers: {},
     } as unknown as Request;
 
-    const callControllerAndFilter = async (fn: () => Promise<unknown>) => {
+    const callControllerAndFilter = async (
+      fn: () => Promise<unknown>,
+    ): Promise<{ status: number; body: ApiResponseError }> => {
       try {
         const result = await fn();
-        return { status: 200, body: result as Record<string, unknown> };
+        return { status: 200, body: result as ApiResponseError };
       } catch (err: unknown) {
         const filter = new GlobalExceptionFilter();
         let capturedStatus = 500;
-        let capturedBody: Record<string, unknown> | null = null;
-        const jsonMock = jest.fn((b) => {
+        let capturedBody: ApiResponseError = {};
+        const jsonMock = jest.fn((b: ApiResponseError) => {
           capturedBody = b;
         });
-        const statusMock = jest.fn((s) => {
+        const statusMock = jest.fn((s: number) => {
           capturedStatus = s;
           return { json: jsonMock };
         });
