@@ -283,21 +283,20 @@ jobs:
           sudo apt-get install -y postgresql-client
 
       - name: Run Database Integration Tests
-        run: |
-          set -eo pipefail
-          pnpm test:integration 2>&1 | tee test-output.log || {
-            echo "### Integration Test Failure Log" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            tail -n 120 test-output.log >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            exit 1
-          }
+        run: pnpm test:integration --verbose
         env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
           TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
           POSTGRES_HOST: 127.0.0.1
           POSTGRES_PORT: 5433
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          ERP_PROVISIONER_PASSWORD: provisioner_secret_change_in_prod
+          ERP_MIGRATOR_PASSWORD: migrator_secret_change_in_prod
+          ERP_APP_PASSWORD: app_secret_change_in_prod
           REDIS_URL: redis://:redispassword@127.0.0.1:6379
           REDIS_PASSWORD: redispassword
+          NODE_ENV: test
 
   dev-setup-verification:
     name: Verify Developer Setup Flow (docker-compose.dev & db:setup-dev)
