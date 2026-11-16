@@ -1,8 +1,7 @@
 import { NestFactory } from '@nestjs/core';
-import helmet from 'helmet';
-import express from 'express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { patchSwagger } from './common/swagger/patch-swagger';
+import { setupExpressApp } from './common/bootstrap/setup-express';
 import { AppModule } from './app.module';
 import { getEnv } from './config/env.config';
 import { LoggerService } from './common/logger/logger.service';
@@ -21,20 +20,13 @@ async function bootstrap() {
   const logger = app.get(LoggerService);
   app.useLogger(logger);
 
-  // Trust proxy for secure and accurate client IP extraction behind Nginx
+  // Foundational Express middleware: security headers, requestId, limits, and guards
   const expressApp = app.getHttpAdapter().getInstance();
-  expressApp.set('trust proxy', true);
-
-  // Configure body limits
-  expressApp.use(express.json({ limit: '1mb' }));
-  expressApp.use(express.urlencoded({ extended: true, limit: '1mb' }));
+  setupExpressApp(expressApp);
 
   // Global pipes, interceptors, and filters are registered via APP_PIPE,
   // APP_INTERCEPTOR, and APP_FILTER in AppModule to ensure unified behavior
   // across production bootstrap and test environments (createTestApp).
-
-  // 2. Security Headers (helmet)
-  app.use(helmet());
 
   // 6. CORS with allowed origins from env
   const allowedOrigins = env.CORS_ORIGINS.split(',').map((origin) => origin.trim());

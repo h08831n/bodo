@@ -80,13 +80,8 @@ describe('Pagination & CursorCodec', () => {
       ];
       const where = buildKeysetWhere({ createdAt: '2026-01-01', id: '10' }, sort);
       expect(where).toEqual({
-        OR: [
-          { createdAt: { gt: '2026-01-01' } },
-          {
-            createdAt: '2026-01-01',
-            OR: [{ id: { gt: '10' } }],
-          },
-        ],
+        createdAt: { gte: '2026-01-01' },
+        OR: [{ createdAt: { gt: '2026-01-01' } }, { id: { gt: '10' } }],
       });
     });
 
@@ -98,12 +93,11 @@ describe('Pagination & CursorCodec', () => {
       const where = buildKeysetWhere({ code: 'ABC', id: '10' }, sort);
       expect(where).toEqual({
         OR: [
-          { code: { gt: 'ABC' } },
-          { code: null },
           {
-            code: 'ABC',
-            OR: [{ id: { gt: '10' } }],
+            code: { gte: 'ABC' },
+            OR: [{ code: { gt: 'ABC' } }, { id: { gt: '10' } }],
           },
+          { code: null },
         ],
       });
     });

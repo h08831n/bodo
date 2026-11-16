@@ -6,10 +6,17 @@ on:
   pull_request:
     branches: [main]
 
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
 jobs:
   quality:
     name: Lint, Typecheck, Test & Build
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -eo pipefail {0}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -147,6 +154,9 @@ jobs:
     name: Verify Docker Builds
     needs: quality
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -eo pipefail {0}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -197,6 +207,9 @@ jobs:
   database-integration:
     name: Database Integration & Drift Check
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -eo pipefail {0}
     services:
       postgres:
         image: postgres:16-alpine
@@ -301,6 +314,9 @@ jobs:
   dev-setup-verification:
     name: Verify Developer Setup Flow (docker-compose.dev & db:setup-dev)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -eo pipefail {0}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

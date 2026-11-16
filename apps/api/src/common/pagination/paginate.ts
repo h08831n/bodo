@@ -99,80 +99,69 @@ export function parseSortString(
 
 /**
  * Builds Prisma keyset where clause for a cursor and list of sort fields using NULLS LAST contract.
+ * Generates leading index-bounded conditions (e.g. `col <= X AND (col < X OR id < Y)`) so the
+ * PostgreSQL query planner pushes `col <= X` directly into an Index Cond (O(1) seek) without
+ * scanning and discarding prior rows.
  */
 export function buildKeysetWhere(
   cursorValues: Record<string, unknown>,
   sortFields: SortField[],
 ): Record<string, unknown> {
-  if (sortFields.length === 0) {
+  if (!sortFields || sortFields.length === 0) {
     return {};
   }
 
-  // Generate recursive or disjunctive condition:
-  // (f1 > c1) OR (f1 == c1 AND f2 > c2) OR ...
-  const buildStep = (index: number): Record<string, unknown>[] => {
-    if (index >= sortFields.length) {
-      return [];
-    }
-
+  const buildFieldStep = (index: number): Record<string, unknown> | undefined => {
+    if (index >= sortFields.length) return undefined;
     const current = sortFields[index];
-    if (!current) {
-      return [];
-    }
+    if (!current) return undefined;
+
     const val = cursorValues[current.field];
     const isNullable = current.nullable ?? false;
+    const isAsc = current.direction === 'asc';
+    const isLastField = index === sortFields.length - 1;
 
-    // Conditions where current field advances past cursor
-    const advances: Record<string, unknown>[] = [];
-
-    if (val === null || val === undefined) {
-      // Current cursor value is null. Under NULLS LAST:
-      // null is at the end of the list. No non-null value is after null.
-      // Only equal nulls can advance on subsequent fields.
-      const subsequent = buildStep(index + 1);
-      if (subsequent.length > 0) {
-        return [
-          {
-            [current.field]: null,
-            OR: subsequent,
-          },
-        ];
+    // If cursor value is null for nullable field under NULLS LAST:
+    if (isNullable && (val === null || val === undefined)) {
+      if (isLastField) {
+        return { [current.field]: null };
       }
-      return [];
+      const nextStep = buildFieldStep(index + 1);
+      return {
+        [current.field]: null,
+        ...(nextStep ? nextStep : {}),
+      };
     }
 
     // Non-null cursor value:
-    if (current.direction === 'asc') {
-      advances.push({ [current.field]: { gt: val } });
-    } else {
-      advances.push({ [current.field]: { lt: val } });
+    if (isLastField) {
+      return {
+        [current.field]: isAsc ? { gt: val } : { lt: val },
+      };
     }
+
+    const nextStep = buildFieldStep(index + 1);
+    const leadingOperator = isAsc ? 'gte' : 'lte';
+    const strictOperator = isAsc ? 'gt' : 'lt';
+
+    const branchStrict = { [current.field]: { [strictOperator]: val } };
+    const branchEqual = nextStep;
+
+    const boundedBranch: Record<string, unknown> = {
+      [current.field]: { [leadingOperator]: val },
+      OR: [branchStrict, branchEqual],
+    };
 
     if (isNullable) {
-      // Under NULLS LAST, null values come after all non-null values
-      advances.push({ [current.field]: null });
+      return {
+        OR: [boundedBranch, { [current.field]: null }],
+      };
     }
 
-    // Tie condition on current field
-    const subsequent = buildStep(index + 1);
-    if (subsequent.length > 0) {
-      advances.push({
-        [current.field]: val,
-        OR: subsequent,
-      });
-    }
-
-    return advances;
+    return boundedBranch;
   };
 
-  const conditions = buildStep(0);
-  if (conditions.length === 0) {
-    return {};
-  }
-  if (conditions.length === 1 && conditions[0]) {
-    return conditions[0];
-  }
-  return { OR: conditions };
+  return buildFieldStep(0) || {};
 }
 
 /**

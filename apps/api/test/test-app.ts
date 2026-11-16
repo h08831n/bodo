@@ -1,7 +1,7 @@
 import { Test, TestingModule, TestingModuleBuilder } from '@nestjs/testing';
 import { INestApplication, Type } from '@nestjs/common';
-import express from 'express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { setupExpressApp } from '../src/common/bootstrap/setup-express';
 import { AppModule } from '../src/app.module';
 import { getEnv } from '../src/config/env.config';
 import { patchSwagger } from '../src/common/swagger/patch-swagger';
@@ -35,9 +35,7 @@ export async function createTestApp(options: CreateTestAppOptions = {}): Promise
   const app = moduleRef.createNestApplication();
 
   const expressApp = app.getHttpAdapter().getInstance();
-  expressApp.set('trust proxy', true);
-  expressApp.use(express.json({ limit: '1mb' }));
-  expressApp.use(express.urlencoded({ extended: true, limit: '1mb' }));
+  setupExpressApp(expressApp);
 
   if (env.OPENAPI_ENABLED) {
     const config = new DocumentBuilder()

@@ -81,6 +81,12 @@ describe('Keyset Pagination Integration Tests with 10,000 Real Rows (Tests 5, 6,
       CREATE INDEX idx_test_pag_created_id ON ${testTableName} (created_at DESC NULLS LAST, id DESC NULLS LAST);
     `);
     await pool.query(`
+      CREATE INDEX idx_test_pag_created_asc_id ON ${testTableName} (created_at ASC NULLS LAST, id ASC NULLS LAST);
+    `);
+    await pool.query(`
+      CREATE INDEX idx_test_pag_deleted_id ON ${testTableName} (deleted_at DESC NULLS LAST, id DESC NULLS LAST);
+    `);
+    await pool.query(`
       CREATE INDEX idx_test_pag_status_amount_id ON ${testTableName} (status ASC NULLS LAST, amount DESC NULLS LAST, id ASC NULLS LAST);
     `);
 
@@ -138,25 +144,23 @@ describe('Keyset Pagination Integration Tests with 10,000 Real Rows (Tests 5, 6,
         const params: unknown[] = [];
 
         const andArray = (args.where?.AND as Array<Record<string, unknown>>) || [];
-        const orClause =
-          (andArray[1]?.OR as Array<Record<string, unknown>>) ||
-          (args.where?.OR as Array<Record<string, unknown>>);
-        if (Array.isArray(orClause)) {
-          const cond1 = orClause[0] as Record<string, { lt?: Date; gt?: Date }> | undefined;
-          const cond2 = orClause[1] as Record<string, unknown> | undefined;
-          const cursorDate = cond1?.created_at?.lt || cond1?.created_at?.gt;
-          const cond2Or = cond2?.OR as
-            Array<Record<string, { lt?: string; gt?: string }>> | undefined;
-          const cond2Direct = cond2 as Record<string, { lt?: string; gt?: string }> | undefined;
-          const cursorId =
-            cond2Or?.[0]?.id?.lt ||
-            cond2Or?.[0]?.id?.gt ||
-            cond2Direct?.id?.lt ||
-            cond2Direct?.id?.gt;
-          if (cursorDate && cursorId) {
-            params.push(cursorDate, cursorId);
-            whereClause = 'WHERE (created_at < $1) OR (created_at = $1 AND id < $2)';
-          }
+        const keysetObj = (andArray[1] || args.where || {}) as Record<string, unknown>;
+        const createdAtBounded = keysetObj.created_at as
+          { lte?: Date; lt?: Date; gte?: Date; gt?: Date } | undefined;
+        const orArray = keysetObj.OR as Array<Record<string, unknown>> | undefined;
+
+        const cursorDate =
+          createdAtBounded?.lte ||
+          createdAtBounded?.lt ||
+          createdAtBounded?.gte ||
+          createdAtBounded?.gt;
+        const idLt =
+          (orArray?.[1] as Record<string, { lt?: string; gt?: string }> | undefined)?.id?.lt ||
+          (orArray?.[1] as Record<string, { lt?: string; gt?: string }> | undefined)?.id?.gt;
+
+        if (cursorDate && idLt) {
+          params.push(cursorDate, idLt);
+          whereClause = 'WHERE created_at <= $1 AND (created_at < $1 OR id < $2)';
         }
 
         const limitClause = `LIMIT ${args.take ?? 50}`;
@@ -226,7 +230,7 @@ describe('Keyset Pagination Integration Tests with 10,000 Real Rows (Tests 5, 6,
     // Fetch next page with existing cursor
     const page2Res = await pool.query(
       `SELECT id, created_at FROM ${testTableName}
-       WHERE (created_at < $1) OR (created_at = $1 AND id < $2)
+       WHERE created_at <= $1 AND (created_at < $1 OR id < $2)
        ORDER BY created_at DESC NULLS LAST, id DESC NULLS LAST LIMIT 50;`,
       [lastItem.created_at, lastItem.id],
     );
@@ -290,40 +294,167 @@ describe('Keyset Pagination Integration Tests with 10,000 Real Rows (Tests 5, 6,
     expect(resultWithTotal.totalCount).toBe(10000);
   });
 
-  it('Test 8: EXPLAIN query on middle page proves Index Scan on composite index (Zero Seq Scan)', async () => {
+  it('Test 8a: EXPLAIN at depths 5%, 50%, 95% proves Index Cond on leading column and Rows Removed by Filter <= 2x limit (Zero Seq Scan)', async () => {
     if (!isDbConnected) return;
 
-    // Pick a middle record cursor
-    const middleRes = await pool.query(`
+    // Depths corresponding to 5%, 50%, and 95% of 10,000 rows
+    const testDepths = [
+      { depthPercent: 5, offset: 500 },
+      { depthPercent: 50, offset: 5000 },
+      { depthPercent: 95, offset: 9500 },
+    ];
+
+    for (const { depthPercent, offset } of testDepths) {
+      const cursorRes = await pool.query(
+        `
+        SELECT id, created_at FROM ${testTableName}
+        ORDER BY created_at DESC NULLS LAST, id DESC NULLS LAST
+        OFFSET $1 LIMIT 1;
+      `,
+        [offset],
+      );
+      expect(cursorRes.rows.length).toBe(1);
+      const cursorItem = cursorRes.rows[0];
+
+      // Run EXPLAIN (ANALYZE, BUFFERS) with leading bounded index condition
+      const explainRes = await pool.query(
+        `EXPLAIN (ANALYZE, BUFFERS)
+         SELECT id, name, created_at FROM ${testTableName}
+         WHERE created_at <= $1 AND (created_at < $1 OR id < $2)
+         ORDER BY created_at DESC NULLS LAST, id DESC NULLS LAST
+         LIMIT 50;`,
+        [cursorItem.created_at, cursorItem.id],
+      );
+
+      const planLines = explainRes.rows
+        .map((r: Record<string, unknown>) => String(r['QUERY PLAN']))
+        .join('\n');
+
+      console.info(`--- EXPLAIN PLAN AT DEPTH ${depthPercent}% (OFFSET ${offset}) ---`);
+      console.info(planLines);
+      console.info('------------------------------------------------------------');
+
+      // 1. Must use Index Scan on composite index
+      expect(planLines).toMatch(/Index Scan|Index Only Scan/);
+      expect(planLines).toContain('idx_test_pag_created_id');
+
+      // 2. Must NOT use Seq Scan
+      expect(planLines).not.toMatch(/Seq Scan on _test_pagination_records/);
+
+      // 3. Must push leading column into Index Cond
+      expect(planLines).toMatch(/Index Cond:\s*\(created_at <=/);
+
+      // 4. Rows Removed by Filter must NOT exceed 2x limit (2 * 50 = 100)
+      const filterMatch = planLines.match(/Rows Removed by Filter:\s*(\d+)/);
+      if (filterMatch && filterMatch[1]) {
+        const removedCount = parseInt(filterMatch[1], 10);
+        expect(removedCount).toBeLessThanOrEqual(100);
+      }
+    }
+  });
+
+  it('Test 8b: EXPLAIN for ascending sort proves Index Cond and Rows Removed by Filter <= 100', async () => {
+    if (!isDbConnected) return;
+
+    const midRes = await pool.query(`
       SELECT id, created_at FROM ${testTableName}
-      ORDER BY created_at DESC NULLS LAST, id DESC NULLS LAST
+      ORDER BY created_at ASC NULLS LAST, id ASC NULLS LAST
       OFFSET 5000 LIMIT 1;
     `);
-    expect(middleRes.rows.length).toBe(1);
-    const middleItem = middleRes.rows[0];
+    const cursor = midRes.rows[0];
 
-    // Run EXPLAIN (ANALYZE, BUFFERS) on Keyset page query
     const explainRes = await pool.query(
       `EXPLAIN (ANALYZE, BUFFERS)
        SELECT id, name, created_at FROM ${testTableName}
-       WHERE (created_at < $1) OR (created_at = $1 AND id < $2)
-       ORDER BY created_at DESC NULLS LAST, id DESC NULLS LAST
+       WHERE created_at >= $1 AND (created_at > $1 OR id > $2)
+       ORDER BY created_at ASC NULLS LAST, id ASC NULLS LAST
        LIMIT 50;`,
-      [middleItem.created_at, middleItem.id],
+      [cursor.created_at, cursor.id],
     );
 
     const planLines = explainRes.rows
       .map((r: Record<string, unknown>) => String(r['QUERY PLAN']))
       .join('\n');
 
-    // Print plan for report verification
-    console.info('--- EXPLAIN PLAN FOR KEYSET PAGINATION ---');
-    console.info(planLines);
-    console.info('-----------------------------------------');
-
-    // Strict assertions: Plan MUST use Index Scan and MUST NOT perform Seq Scan
-    expect(planLines).toMatch(/Index Scan/);
-    expect(planLines).toContain('idx_test_pag_created_id');
+    expect(planLines).toMatch(/Index Scan|Index Only Scan/);
+    expect(planLines).toContain('idx_test_pag_created_asc_id');
     expect(planLines).not.toMatch(/Seq Scan on _test_pagination_records/);
+    expect(planLines).toMatch(/Index Cond:\s*\(created_at >=/);
+
+    const filterMatch = planLines.match(/Rows Removed by Filter:\s*(\d+)/);
+    if (filterMatch && filterMatch[1]) {
+      const removedCount = parseInt(filterMatch[1], 10);
+      expect(removedCount).toBeLessThanOrEqual(100);
+    }
+  });
+
+  it('Test 8c: EXPLAIN for nullable column with NULLS LAST (non-null and null cursors)', async () => {
+    if (!isDbConnected) return;
+
+    // 1. Non-null cursor on nullable column
+    const midRes = await pool.query(`
+      SELECT id, deleted_at FROM ${testTableName}
+      WHERE deleted_at IS NOT NULL
+      ORDER BY deleted_at DESC NULLS LAST, id DESC NULLS LAST
+      OFFSET 1000 LIMIT 1;
+    `);
+    const nonNullCursor = midRes.rows[0];
+
+    const explainResNonNull = await pool.query(
+      `EXPLAIN (ANALYZE, BUFFERS)
+       SELECT id, name, deleted_at FROM ${testTableName}
+       WHERE deleted_at <= $1 AND (deleted_at < $1 OR id < $2)
+       ORDER BY deleted_at DESC NULLS LAST, id DESC NULLS LAST
+       LIMIT 50;`,
+      [nonNullCursor.deleted_at, nonNullCursor.id],
+    );
+
+    const planNonNull = explainResNonNull.rows
+      .map((r: Record<string, unknown>) => String(r['QUERY PLAN']))
+      .join('\n');
+
+    expect(planNonNull).toMatch(/Index Scan|Index Only Scan/);
+    expect(planNonNull).toContain('idx_test_pag_deleted_id');
+    expect(planNonNull).not.toMatch(/Seq Scan on _test_pagination_records/);
+    expect(planNonNull).toMatch(/Index Cond:\s*\(deleted_at <=/);
+
+    const filterMatchNonNull = planNonNull.match(/Rows Removed by Filter:\s*(\d+)/);
+    if (filterMatchNonNull && filterMatchNonNull[1]) {
+      const removedCount = parseInt(filterMatchNonNull[1], 10);
+      expect(removedCount).toBeLessThanOrEqual(100);
+    }
+
+    // 2. NULL cursor on nullable column
+    const nullRes = await pool.query(`
+      SELECT id, deleted_at FROM ${testTableName}
+      WHERE deleted_at IS NULL
+      ORDER BY id DESC
+      OFFSET 500 LIMIT 1;
+    `);
+    const nullCursor = nullRes.rows[0];
+
+    const explainResNull = await pool.query(
+      `EXPLAIN (ANALYZE, BUFFERS)
+       SELECT id, name, deleted_at FROM ${testTableName}
+       WHERE deleted_at IS NULL AND id < $1
+       ORDER BY deleted_at DESC NULLS LAST, id DESC NULLS LAST
+       LIMIT 50;`,
+      [nullCursor.id],
+    );
+
+    const planNull = explainResNull.rows
+      .map((r: Record<string, unknown>) => String(r['QUERY PLAN']))
+      .join('\n');
+
+    expect(planNull).toMatch(/Index Scan|Index Only Scan/);
+    expect(planNull).toContain('idx_test_pag_deleted_id');
+    expect(planNull).not.toMatch(/Seq Scan on _test_pagination_records/);
+    expect(planNull).toMatch(/Index Cond:\s*\(\(deleted_at IS NULL\) AND \(id </);
+
+    const filterMatchNull = planNull.match(/Rows Removed by Filter:\s*(\d+)/);
+    if (filterMatchNull && filterMatchNull[1]) {
+      const removedCount = parseInt(filterMatchNull[1], 10);
+      expect(removedCount).toBeLessThanOrEqual(100);
+    }
   });
 });

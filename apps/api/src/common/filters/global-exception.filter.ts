@@ -228,6 +228,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       },
     };
 
+    if (typeof response.setHeader === 'function') {
+      response.setHeader('X-Request-Id', requestId);
+    }
+    if (typeof response.removeHeader === 'function') {
+      response.removeHeader('X-Powered-By');
+      response.removeHeader('x-powered-by');
+    }
     response.status(status).json(errorBody);
   }
 }

@@ -44,7 +44,7 @@ describe('Structural & Unified Configuration Guard (Rule 3)', () => {
     expect(tokens).toContain(APP_INTERCEPTOR);
   });
 
-  it('HTTP verification: createTestApp rejects malformed JSON with 400 VALIDATION_FAILED', async () => {
+  it('HTTP verification: createTestApp rejects malformed JSON with 400 VALIDATION_FAILED, Helmet, requestId, and no X-Powered-By', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/admin/login')
       .set('Content-Type', 'application/json')
@@ -53,7 +53,58 @@ describe('Structural & Unified Configuration Guard (Rule 3)', () => {
     expect(res.status).toBe(400);
     expect(res.body?.error?.code).toBe('VALIDATION_FAILED');
     expect(res.body?.error?.message).toMatch(/قالب داده ارسالی \(JSON\) نامعتبر است/);
-    expect(res.body?.error?.requestId).toBeDefined();
+    expect(res.body?.error?.requestId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+    // Security headers (Helmet)
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    // Absence of X-Powered-By
+    expect(res.headers['x-powered-by']).toBeUndefined();
+  });
+
+  it('HTTP verification: createTestApp rejects payload > 1MB with 413 PAYLOAD_TOO_LARGE, Helmet, requestId, and no X-Powered-By', async () => {
+    const largePayload = 'a'.repeat(1024 * 1024 + 100); // > 1MB
+    const res = await request(app.getHttpServer())
+      .post('/v1/admin/login')
+      .set('Content-Type', 'application/json')
+      .send(JSON.stringify({ password: largePayload }));
+
+    expect(res.status).toBe(413);
+    expect(res.body?.error?.code).toBe('PAYLOAD_TOO_LARGE');
+    expect(res.body?.error?.message).toMatch(/حجم بدنه درخواست بیش از حد مجاز است/);
+    expect(res.body?.error?.requestId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['x-powered-by']).toBeUndefined();
+  });
+
+  it('HTTP verification: createTestApp rejects unsupported media type with 415, Helmet, requestId, and no X-Powered-By', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/v1/admin/login')
+      .set('Content-Type', 'application/xml')
+      .send('<xml><body>not json</body></xml>');
+
+    expect(res.status).toBe(415);
+    expect(res.body?.error?.code).toBe('UNSUPPORTED_MEDIA_TYPE');
+    expect(res.body?.error?.message).toMatch(/قالب رسانه درخواست پشتیبانی نمی‌شود/);
+    expect(res.body?.error?.requestId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['x-powered-by']).toBeUndefined();
+  });
+
+  it('HTTP verification: successful response returns raw payload directly (NO { data, meta } wrapper), Helmet headers, and no X-Powered-By', async () => {
+    const res = await request(app.getHttpServer()).get('/health/live');
+
+    expect(res.status).toBe(200);
+    // Raw payload directly returned
+    expect(res.body?.status).toBe('ok');
+    expect(res.body?.data).toBeUndefined();
+    expect(res.body?.meta).toBeUndefined();
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['x-powered-by']).toBeUndefined();
   });
 
   it('HTTP verification: createTestApp rejects unexpected extra fields with 400 VALIDATION_FAILED (strict schema)', async () => {
