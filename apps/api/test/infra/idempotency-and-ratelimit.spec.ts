@@ -25,6 +25,30 @@ describe('Idempotency, Optimistic Locking, and Rate Limit Integration Tests (Tes
   const testLockTable = '_test_optimistic_records';
 
   beforeAll(async () => {
+    // Ensure targetDb exists
+    const adminPool = new pg.Pool({
+      host,
+      port,
+      user: 'postgres',
+      password: superuserPass,
+      database: 'postgres',
+      connectionTimeoutMillis: 5000,
+    });
+    try {
+      const adminClient = await adminPool.connect();
+      const checkDb = await adminClient.query(
+        "SELECT 1 FROM pg_database WHERE datname = 'erp_dev'",
+      );
+      if (checkDb.rowCount === 0) {
+        await adminClient.query('CREATE DATABASE erp_dev OWNER erp_migrator;');
+      }
+      adminClient.release();
+    } catch {
+      // Ignored if unable to check
+    } finally {
+      await adminPool.end().catch(() => {});
+    }
+
     pool = new pg.Pool({
       host,
       port,
@@ -224,11 +248,11 @@ describe('Idempotency, Optimistic Locking, and Rate Limit Integration Tests (Tes
     };
 
     // 1. Successful update: version 1 -> 2
-    const updated = await updateWithVersion({
+    const updated = (await updateWithVersion({
       model: mockDelegate as unknown as Parameters<typeof updateWithVersion>[0]['model'],
       where: { id: recordId, version: 1 },
       data: { name: 'Updated Name (v2)' },
-    });
+    })) as { version: number; name: string };
     expect(updated.version).toBe(2);
     expect(updated.name).toBe('Updated Name (v2)');
 

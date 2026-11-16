@@ -21,7 +21,7 @@ export interface PaginateOptions<TModel, TWhere, TOrderBy, TSelect, TInclude> {
     }) => Promise<TModel[]>;
     count?: (args: { where?: TWhere }) => Promise<number>;
   };
-  query: PaginationQuery;
+  query: Partial<PaginationQuery>;
   defaultSort?: SortField[];
   allowedSortFields?: Record<string, { nullable?: boolean }> | string[];
   baseWhere?: TWhere;

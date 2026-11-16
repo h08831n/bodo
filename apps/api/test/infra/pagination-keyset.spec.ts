@@ -18,6 +18,30 @@ describe('Keyset Pagination Integration Tests with 10,000 Real Rows (Tests 5, 6,
   const testTableName = '_test_pagination_records';
 
   beforeAll(async () => {
+    // Ensure targetDb exists
+    const adminPool = new pg.Pool({
+      host,
+      port,
+      user: 'postgres',
+      password: superuserPass,
+      database: 'postgres',
+      connectionTimeoutMillis: 5000,
+    });
+    try {
+      const adminClient = await adminPool.connect();
+      const checkDb = await adminClient.query(
+        "SELECT 1 FROM pg_database WHERE datname = 'erp_dev'",
+      );
+      if (checkDb.rowCount === 0) {
+        await adminClient.query('CREATE DATABASE erp_dev OWNER erp_migrator;');
+      }
+      adminClient.release();
+    } catch {
+      // Ignored if unable to check
+    } finally {
+      await adminPool.end().catch(() => {});
+    }
+
     pool = new pg.Pool({
       host,
       port,
@@ -107,44 +131,40 @@ describe('Keyset Pagination Integration Tests with 10,000 Real Rows (Tests 5, 6,
 
     // Delegate simulating Prisma model query via real Postgres pool
     const mockDelegate = {
-      findMany: async (args: {
-        where?: {
-          AND?: Array<{
-            OR?: Array<{
-              created_at?: { lt?: Date; gt?: Date };
-              OR?: Array<{ id?: { lt?: string; gt?: string } }>;
-            }>;
-          }>;
-          OR?: Array<{
-            created_at?: { lt?: Date; gt?: Date };
-            OR?: Array<{ id?: { lt?: string; gt?: string } }>;
-          }>;
-        };
-      }) => {
+      findMany: async (args: { where?: Record<string, unknown>; take?: number }) => {
         // Construct SQL query from Keyset args
         const sortClause = 'ORDER BY created_at DESC NULLS LAST, id DESC NULLS LAST';
         let whereClause = '';
         const params: unknown[] = [];
 
-        const orClause = args.where?.AND?.[1]?.OR || args.where?.OR;
-        if (orClause) {
-          const cond1 = orClause[0];
-          const cond2 = orClause[1];
+        const andArray = (args.where?.AND as Array<Record<string, unknown>>) || [];
+        const orClause =
+          (andArray[1]?.OR as Array<Record<string, unknown>>) ||
+          (args.where?.OR as Array<Record<string, unknown>>);
+        if (Array.isArray(orClause)) {
+          const cond1 = orClause[0] as Record<string, { lt?: Date; gt?: Date }> | undefined;
+          const cond2 = orClause[1] as Record<string, unknown> | undefined;
           const cursorDate = cond1?.created_at?.lt || cond1?.created_at?.gt;
+          const cond2Or = cond2?.OR as
+            Array<Record<string, { lt?: string; gt?: string }>> | undefined;
+          const cond2Direct = cond2 as Record<string, { lt?: string; gt?: string }> | undefined;
           const cursorId =
-            cond2?.OR?.[0]?.id?.lt || cond2?.OR?.[0]?.id?.gt || cond2?.id?.lt || cond2?.id?.gt;
+            cond2Or?.[0]?.id?.lt ||
+            cond2Or?.[0]?.id?.gt ||
+            cond2Direct?.id?.lt ||
+            cond2Direct?.id?.gt;
           if (cursorDate && cursorId) {
             params.push(cursorDate, cursorId);
             whereClause = 'WHERE (created_at < $1) OR (created_at = $1 AND id < $2)';
           }
         }
 
-        const limitClause = `LIMIT ${args.take}`;
+        const limitClause = `LIMIT ${args.take ?? 50}`;
         const sql = `SELECT id, item_number, name, amount, status, created_at, deleted_at FROM ${testTableName} ${whereClause} ${sortClause} ${limitClause};`;
         const res = await pool.query(sql, params);
-        return res.rows.map((r) => ({
+        return res.rows.map((r: Record<string, unknown>) => ({
           ...r,
-          created_at: new Date(r.created_at),
+          created_at: new Date(String(r.created_at)),
         }));
       },
       count: async () => {
@@ -154,24 +174,26 @@ describe('Keyset Pagination Integration Tests with 10,000 Real Rows (Tests 5, 6,
     };
 
     do {
-      const result = await paginate({
-        model: mockDelegate,
-        query: {
-          limit: pageSize,
-          cursor,
-          sort: 'created_at:desc,id:desc',
-        },
-        allowedSortFields: ['created_at', 'status', 'amount', 'id'],
-      });
+      const result: { items: Array<Record<string, unknown>>; nextCursor: string | null } =
+        await paginate({
+          model: mockDelegate,
+          query: {
+            limit: pageSize,
+            cursor,
+            sort: 'created_at:desc,id:desc',
+          },
+          allowedSortFields: ['created_at', 'status', 'amount', 'id'],
+        });
 
       pageCount++;
       for (const item of result.items) {
-        expect(visitedIds.has(item.id)).toBe(false); // Zero duplicates
-        visitedIds.add(item.id);
+        const idStr = String(item.id);
+        expect(visitedIds.has(idStr)).toBe(false); // Zero duplicates
+        visitedIds.add(idStr);
         totalTraversed++;
       }
 
-      cursor = result.nextCursor;
+      cursor = result.nextCursor || undefined;
     } while (cursor);
 
     // Verify complete traversal

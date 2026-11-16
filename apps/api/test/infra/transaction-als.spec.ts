@@ -20,6 +20,30 @@ describe('Tenant ALS Transaction Service Integration Tests (Tests 9, 10, 11)', (
   const testTableName = '_test_tx_records';
 
   beforeAll(async () => {
+    // Ensure targetDb exists
+    const adminPool = new pg.Pool({
+      host,
+      port,
+      user: 'postgres',
+      password: superuserPass,
+      database: 'postgres',
+      connectionTimeoutMillis: 5000,
+    });
+    try {
+      const adminClient = await adminPool.connect();
+      const checkDb = await adminClient.query(
+        "SELECT 1 FROM pg_database WHERE datname = 'erp_dev'",
+      );
+      if (checkDb.rowCount === 0) {
+        await adminClient.query('CREATE DATABASE erp_dev OWNER erp_migrator;');
+      }
+      adminClient.release();
+    } catch {
+      // Ignored if unable to check
+    } finally {
+      await adminPool.end().catch(() => {});
+    }
+
     pool = new pg.Pool({
       host,
       port,

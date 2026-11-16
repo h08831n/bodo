@@ -260,6 +260,15 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
 
+      - name: Setup Development Database
+        run: pnpm db:setup-dev
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
+          POSTGRES_HOST: 127.0.0.1
+          POSTGRES_PORT: 5433
+          REDIS_URL: redis://:redispassword@127.0.0.1:6379
+          REDIS_PASSWORD: redispassword
+
       - name: Check Database Schema Drift
         run: pnpm db:check-drift
         env:
