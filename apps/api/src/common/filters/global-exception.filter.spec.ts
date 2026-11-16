@@ -195,7 +195,7 @@ describe('GlobalExceptionFilter', () => {
     expect(jsonMock).toHaveBeenCalledWith({
       error: {
         code: 'VALIDATION_FAILED',
-        message: 'قالب JSON نامعتبر است.',
+        message: 'قالب داده ارسالی (JSON) نامعتبر است.',
         details: undefined,
         requestId: 'test-req-123',
       },

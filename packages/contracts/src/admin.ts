@@ -1,8 +1,10 @@
 import { z } from 'zod';
 
-export const AdminLoginRequestSchema = z.object({
-  password: z.string().min(1, 'Password is required'),
-});
+export const AdminLoginRequestSchema = z
+  .object({
+    password: z.string().min(1, 'Password is required'),
+  })
+  .strict();
 export type AdminLoginRequest = z.infer<typeof AdminLoginRequestSchema>;
 
 export const AdminLoginResponseSchema = z.object({
@@ -11,10 +13,12 @@ export const AdminLoginResponseSchema = z.object({
 });
 export type AdminLoginResponse = z.infer<typeof AdminLoginResponseSchema>;
 
-export const ChangeMasterPasswordRequestSchema = z.object({
-  currentPassword: z.string().min(1, 'Current password is required'),
-  newPassword: z.string().min(12, 'New password must be at least 12 characters'),
-});
+export const ChangeMasterPasswordRequestSchema = z
+  .object({
+    currentPassword: z.string().min(1, 'Current password is required'),
+    newPassword: z.string().min(12, 'New password must be at least 12 characters'),
+  })
+  .strict();
 export type ChangeMasterPasswordRequest = z.infer<typeof ChangeMasterPasswordRequestSchema>;
 
 export const DatabaseListItemSchema = z.object({
@@ -39,22 +43,26 @@ export const CompanySlugSchema = z
   .refine((s) => !s.includes('__'), 'نام شرکت نباید شامل دو خط زیر متوالی باشد')
   .refine((s) => !s.endsWith('_'), 'نام شرکت نباید با خط زیر پایان یابد');
 
-export const CreateDatabaseRequestSchema = z.object({
-  name: CompanySlugSchema,
-  adminUsername: z
-    .string()
-    .min(3, 'نام کاربری باید حداقل ۳ کاراکتر باشد')
-    .max(32, 'نام کاربری نباید بیشتر از ۳۲ کاراکتر باشد')
-    .regex(/^[a-z0-9_]+$/, 'نام کاربری فقط می‌تواند شامل حروف کوچک انگلیسی، اعداد و خط زیر باشد'),
-  adminFullName: z.string().min(2, 'نام کامل مدیر باید حداقل ۲ کاراکتر باشد').max(100),
-  adminPassword: z.string().min(10, 'رمز عبور باید حداقل ۱۰ کاراکتر باشد'),
-});
+export const CreateDatabaseRequestSchema = z
+  .object({
+    name: CompanySlugSchema,
+    adminUsername: z
+      .string()
+      .min(3, 'نام کاربری باید حداقل ۳ کاراکتر باشد')
+      .max(32, 'نام کاربری نباید بیشتر از ۳۲ کاراکتر باشد')
+      .regex(/^[a-z0-9_]+$/, 'نام کاربری فقط می‌تواند شامل حروف کوچک انگلیسی، اعداد و خط زیر باشد'),
+    adminFullName: z.string().min(2, 'نام کامل مدیر باید حداقل ۲ کاراکتر باشد').max(100),
+    adminPassword: z.string().min(10, 'رمز عبور باید حداقل ۱۰ کاراکتر باشد'),
+  })
+  .strict();
 export type CreateDatabaseRequest = z.infer<typeof CreateDatabaseRequestSchema>;
 
-export const DuplicateDatabaseRequestSchema = z.object({
-  newName: CompanySlugSchema,
-  neutralize: z.boolean().default(false),
-});
+export const DuplicateDatabaseRequestSchema = z
+  .object({
+    newName: CompanySlugSchema,
+    neutralize: z.boolean().default(false),
+  })
+  .strict();
 export type DuplicateDatabaseRequest = z.infer<typeof DuplicateDatabaseRequestSchema>;
 
 export const BackupListItemSchema = z.object({
@@ -64,42 +72,54 @@ export const BackupListItemSchema = z.object({
 });
 export type BackupListItem = z.infer<typeof BackupListItemSchema>;
 
-export const RestoreDatabaseRequestSchema = z.object({
-  newName: CompanySlugSchema,
-  neutralize: z.boolean().default(false),
-});
+export const RestoreDatabaseRequestSchema = z
+  .object({
+    newName: CompanySlugSchema,
+    neutralize: z.boolean().default(false),
+  })
+  .strict();
 export type RestoreDatabaseRequest = z.infer<typeof RestoreDatabaseRequestSchema>;
 
-export const DeleteDatabaseRequestSchema = z.object({
-  confirmName: z.string().min(1, 'Database confirmation name is required'),
-});
+export const DeleteDatabaseRequestSchema = z
+  .object({
+    confirmName: z.string().min(1, 'Database confirmation name is required'),
+  })
+  .strict();
 export type DeleteDatabaseRequest = z.infer<typeof DeleteDatabaseRequestSchema>;
 
-export const UpgradeDatabaseRequestSchema = z.object({
-  targetMigration: z.string().optional(),
-});
+export const UpgradeDatabaseRequestSchema = z
+  .object({
+    targetMigration: z.string().optional(),
+  })
+  .strict();
 export type UpgradeDatabaseRequest = z.infer<typeof UpgradeDatabaseRequestSchema>;
 
-export const RepairDatabaseRequestSchema = z.object({
-  confirm: z.boolean(),
-  migration: z.string().optional(),
-});
+export const RepairDatabaseRequestSchema = z
+  .object({
+    confirm: z.boolean(),
+    migration: z.string().optional(),
+  })
+  .strict();
 export type RepairDatabaseRequest = z.infer<typeof RepairDatabaseRequestSchema>;
 
-export const SetMaintenanceRequestSchema = z.object({
-  enabled: z.boolean(),
-  reason: z.string().optional(),
-  confirm: z.boolean().optional(),
-});
+export const SetMaintenanceRequestSchema = z
+  .object({
+    enabled: z.boolean(),
+    reason: z.string().optional(),
+    confirm: z.boolean().optional(),
+  })
+  .strict();
 export type SetMaintenanceRequest = z.infer<typeof SetMaintenanceRequestSchema>;
 
-export const SetDomainRequestSchema = z.object({
-  host: z
-    .string()
-    .toLowerCase()
-    .regex(/^[a-z0-9.-]+$/, 'Hostname must be valid lowercase domain name')
-    .nullable(),
-});
+export const SetDomainRequestSchema = z
+  .object({
+    host: z
+      .string()
+      .toLowerCase()
+      .regex(/^[a-z0-9.-]+$/, 'Hostname must be valid lowercase domain name')
+      .nullable(),
+  })
+  .strict();
 export type SetDomainRequest = z.infer<typeof SetDomainRequestSchema>;
 
 export const AdminJobStatusSchema = z.object({

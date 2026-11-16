@@ -4,9 +4,11 @@ import * as os from 'os';
 import { spawnSync } from 'child_process';
 import archiver from 'archiver';
 import pg from 'pg';
-import { ArgumentsHost } from '@nestjs/common';
+import request from 'supertest';
+import { INestApplication, ArgumentsHost } from '@nestjs/common';
 import type { Request } from 'express';
 import { getEnv } from '../../src/config/env.config';
+import { createTestApp } from '../test-app';
 import { DatabaseManagerService } from '../../src/infra/database-manager/database-manager.service';
 import { DatabaseManagerController } from '../../src/infra/database-manager/database-manager.controller';
 import { GlobalExceptionFilter } from '../../src/common/filters/global-exception.filter';
@@ -24,11 +26,7 @@ import { DatabaseRegistryService } from '../../src/infra/tenancy/database-regist
 import { RedisService } from '../../src/infra/redis/redis.service';
 import { AdminAuditLogger } from '../../src/infra/admin/admin-audit.logger';
 import { ZodValidationPipe } from 'nestjs-zod';
-import {
-  CreateDatabaseDto,
-  DuplicateDatabaseDto,
-  DeleteDatabaseDto,
-} from '../../src/infra/database-manager/dto/database-manager.dto';
+import { CreateDatabaseDto } from '../../src/infra/database-manager/dto/database-manager.dto';
 import { buildDatabaseUrl } from '@bodo/utils';
 
 jest.setTimeout(180000);
@@ -67,6 +65,8 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
   let dbManager: DatabaseManagerService;
   let jobQueue: JobQueueService;
   let controller: DatabaseManagerController;
+  let app: INestApplication;
+  let adminToken: string;
 
   let isDbConnected = false;
 
@@ -127,6 +127,13 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
     jobQueue = new JobQueueService();
     controller = new DatabaseManagerController(dbManager, jobQueue, new AdminAuditLogger());
 
+    // Boot full test app for real HTTP testing
+    app = await createTestApp();
+    const loginRes = await request(app.getHttpServer())
+      .post('/v1/admin/login')
+      .send({ password: process.env.MASTER_PASSWORD || 'MasterSecurePassword2026!' });
+    adminToken = loginRes.body?.token || '';
+
     // Clean up any leftovers from previous test runs
     for (const db of [testDbName, duplicateDbName, restoreDbName]) {
       await superuserPool
@@ -140,6 +147,9 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
   });
 
   afterAll(async () => {
+    if (app) {
+      await app.close().catch(() => {});
+    }
     if (!isDbConnected) return;
 
     for (const db of [testDbName, duplicateDbName, restoreDbName]) {
@@ -916,87 +926,59 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
   });
 
   describe('Test 24: Fuzzing tests guarantee ZERO 500 errors on invalid inputs across admin endpoints', () => {
-    const mockReq = {
-      ip: '127.0.0.1',
-      requestId: 'test-req-fuzz',
-      headers: {},
-    } as unknown as Request;
-
-    const callControllerAndFilter = async (
-      fn: () => Promise<unknown>,
-    ): Promise<{ status: number; body: ApiResponseError }> => {
-      try {
-        const result = await fn();
-        return { status: 200, body: result as ApiResponseError };
-      } catch (err: unknown) {
-        const filter = new GlobalExceptionFilter();
-        let capturedStatus = 500;
-        let capturedBody: ApiResponseError = {};
-        const jsonMock = jest.fn((b: ApiResponseError) => {
-          capturedBody = b;
-        });
-        const statusMock = jest.fn((s: number) => {
-          capturedStatus = s;
-          return { json: jsonMock };
-        });
-        const setHeaderMock = jest.fn();
-
-        const mockResponse = { status: statusMock, setHeader: setHeaderMock };
-        const mockRequest = { requestId: 'test-req-fuzz', ip: '127.0.0.1', headers: {} };
-
-        const host = {
-          switchToHttp: () => ({
-            getResponse: () => mockResponse,
-            getRequest: () => mockRequest,
-          }),
-        } as unknown as ArgumentsHost;
-
-        filter.catch(err, host);
-        return { status: capturedStatus, body: capturedBody };
-      }
-    };
-
     const fuzzBodies = [
       {}, // Empty body
       null, // Null value
       { name: 12345, adminPassword: true }, // Wrong data types
-      { name: 'a'.repeat(5000), adminPassword: 'p'.repeat(5000) }, // Ultra-long string
-      { name: '<script>alert("xss")</script>', adminUsername: 'DROP TABLE;' }, // Injection string
+      { name: 'a'.repeat(5000), adminPassword: 'p'.repeat(5000) }, // Ultra-long string (fuzz payload #4)
+      { name: '<script>alert("xss")</script>', adminUsername: 'DROP TABLE;' }, // Injection string (fuzz payload #5)
+      {
+        name: 'valid_name',
+        adminUsername: 'valid_user',
+        adminFullName: 'Valid Manager',
+        adminPassword: 'ValidPassword123!',
+        unexpectedExtraField: 'evil_data',
+      }, // Extra unrecognized field (strict schema test)
     ];
 
     for (let i = 0; i < fuzzBodies.length; i++) {
-      it(`POST /databases with fuzz payload #${i + 1} returns 4xx and never 500`, async () => {
-        const res = await callControllerAndFilter(() =>
-          controller.createDatabase(fuzzBodies[i] as unknown as CreateDatabaseDto, mockReq),
-        );
+      it(`POST /v1/admin/databases with fuzz payload #${i + 1} returns 4xx and never 500 via HTTP pipeline`, async () => {
+        if (!isDbConnected || !app) return;
+
+        const res = await request(app.getHttpServer())
+          .post('/v1/admin/databases')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send(fuzzBodies[i] as Record<string, unknown>);
+
         expect(res.status).toBeGreaterThanOrEqual(400);
         expect(res.status).toBeLessThan(500);
         expect(res.body?.error?.code).not.toBe('INTERNAL');
+        expect(res.body?.error?.code).toBe('VALIDATION_FAILED');
         expect(res.body?.error?.message).toBeDefined();
         expect(res.body?.error?.requestId).toBeDefined();
       });
 
-      it(`POST /databases/:name/duplicate with fuzz payload #${i + 1} returns 4xx and never 500`, async () => {
-        const res = await callControllerAndFilter(() =>
-          controller.duplicateDatabase(
-            'test_mgr_orig',
-            fuzzBodies[i] as unknown as DuplicateDatabaseDto,
-            mockReq,
-          ),
-        );
+      it(`POST /v1/admin/databases/:name/duplicate with fuzz payload #${i + 1} returns 4xx and never 500 via HTTP pipeline`, async () => {
+        if (!isDbConnected || !app) return;
+
+        const res = await request(app.getHttpServer())
+          .post('/v1/admin/databases/test_mgr_orig/duplicate')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send(fuzzBodies[i] as Record<string, unknown>);
+
         expect(res.status).toBeGreaterThanOrEqual(400);
         expect(res.status).toBeLessThan(500);
         expect(res.body?.error?.code).not.toBe('INTERNAL');
       });
 
-      it(`DELETE /databases/:name with fuzz payload #${i + 1} returns 4xx and never 500`, async () => {
-        const res = await callControllerAndFilter(() =>
-          controller.deleteDatabase(
-            'test_mgr_orig',
-            fuzzBodies[i] as unknown as DeleteDatabaseDto,
-            mockReq,
-          ),
-        );
+      it(`DELETE /v1/admin/databases/:name with fuzz payload #${i + 1} returns 4xx and never 500 via HTTP pipeline`, async () => {
+        if (!isDbConnected || !app) return;
+
+        const res = await request(app.getHttpServer())
+          .delete('/v1/admin/databases/test_mgr_orig')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send(fuzzBodies[i] as Record<string, unknown>);
+
         expect(res.status).toBeGreaterThanOrEqual(400);
         expect(res.status).toBeLessThan(500);
         expect(res.body?.error?.code).not.toBe('INTERNAL');

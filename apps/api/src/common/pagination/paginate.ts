@@ -23,7 +23,7 @@ export interface PaginateOptions<TModel, TWhere, TOrderBy, TSelect, TInclude> {
   };
   query: PaginationQuery;
   defaultSort?: SortField[];
-  allowedSortFields?: Record<string, { nullable?: boolean }>;
+  allowedSortFields?: Record<string, { nullable?: boolean }> | string[];
   baseWhere?: TWhere;
   select?: TSelect;
   include?: TInclude;
@@ -34,10 +34,16 @@ const MAX_USER_SORT_FIELDS = 3;
 
 export function parseSortString(
   sortStr: string | undefined,
-  allowedFields?: Record<string, { nullable?: boolean }>,
+  allowedFieldsInput?: Record<string, { nullable?: boolean }> | string[],
   defaultSort: SortField[] = [{ field: 'id', direction: 'asc' }],
   idField = 'id',
 ): SortField[] {
+  const allowedFields: Record<string, { nullable?: boolean }> | undefined = Array.isArray(
+    allowedFieldsInput,
+  )
+    ? Object.fromEntries(allowedFieldsInput.map((f) => [f, { nullable: false }]))
+    : allowedFieldsInput;
+
   if (!sortStr || sortStr.trim() === '') {
     const list = [...defaultSort];
     if (!list.some((s) => s.field === idField)) {

@@ -3,12 +3,9 @@ import helmet from 'helmet';
 import express from 'express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { patchSwagger } from './common/swagger/patch-swagger';
-import { ZodValidationPipe } from 'nestjs-zod';
 import { AppModule } from './app.module';
 import { getEnv } from './config/env.config';
 import { LoggerService } from './common/logger/logger.service';
-import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
-import { ResponseTransformInterceptor } from './common/interceptors/response-transform.interceptor';
 
 // Patch NestJS Swagger for automatic Zod schema reflection
 patchSwagger();
@@ -32,16 +29,11 @@ async function bootstrap() {
   expressApp.use(express.json({ limit: '1mb' }));
   expressApp.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-  // 2. Global Validation Pipe (nestjs-zod)
-  app.useGlobalPipes(new ZodValidationPipe());
+  // Global pipes, interceptors, and filters are registered via APP_PIPE,
+  // APP_INTERCEPTOR, and APP_FILTER in AppModule to ensure unified behavior
+  // across production bootstrap and test environments (createTestApp).
 
-  // 3. Global Response Transformer Interceptor (UTC Date, Decimal/BigInt string, strip undefined)
-  app.useGlobalInterceptors(new ResponseTransformInterceptor());
-
-  // 4. Global Exception Filter
-  app.useGlobalFilters(new GlobalExceptionFilter(logger));
-
-  // 5. Security Headers (helmet)
+  // 2. Security Headers (helmet)
   app.use(helmet());
 
   // 6. CORS with allowed origins from env
@@ -62,14 +54,16 @@ async function bootstrap() {
   });
 
   // 7. Swagger Documentation
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Bodo ERP API')
-    .setDescription('Bodo Multi-Tenant Steel Trading ERP API')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('docs', app, document);
+  if (env.OPENAPI_ENABLED) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Bodo ERP API')
+      .setDescription('Bodo Multi-Tenant Steel Trading ERP API')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('docs', app, document);
+  }
 
   // 8. Graceful Shutdown
   app.enableShutdownHooks();

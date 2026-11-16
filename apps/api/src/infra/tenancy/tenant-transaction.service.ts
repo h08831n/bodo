@@ -6,6 +6,7 @@ import { LoggerService } from '../../common/logger/logger.service';
 export interface TransactionOptions {
   timeoutMs?: number;
   maxWaitMs?: number;
+  retryable?: boolean;
 }
 
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -49,34 +50,53 @@ export class TenantTransactionService {
     const startTime = Date.now();
     const hooks: Array<() => Promise<void> | void> = [];
 
-    let result: T;
+    const maxRetries = options?.retryable ? 3 : 1;
+    let attempt = 0;
+    let result!: T;
 
-    try {
-      result = await client.$transaction(
-        async (tx) => {
-          return runWithTenant(
-            {
-              ...context,
-              tx,
-              afterCommitHooks: hooks,
-            },
-            async () => {
-              return fn(tx);
-            },
-          );
-        },
-        {
-          timeout,
-          maxWait,
-        },
-      );
-    } catch (err) {
-      const durationMs = Date.now() - startTime;
-      this.logger?.debug?.(
-        `Transaction rolled back for '${context.db}' after ${durationMs}ms`,
-        'TenantTransactionService',
-      );
-      throw err;
+    while (attempt < maxRetries) {
+      attempt++;
+      try {
+        result = await client.$transaction(
+          async (tx) => {
+            return runWithTenant(
+              {
+                ...context,
+                tx,
+                afterCommitHooks: hooks,
+              },
+              async () => {
+                return fn(tx);
+              },
+            );
+          },
+          {
+            timeout,
+            maxWait,
+          },
+        );
+        break;
+      } catch (err) {
+        const isDeadlockOrSerialization =
+          err &&
+          typeof err === 'object' &&
+          'code' in err &&
+          (err.code === '40P01' || err.code === '40001' || err.code === 'P2034');
+
+        if (options?.retryable && isDeadlockOrSerialization && attempt < maxRetries) {
+          hooks.length = 0; // Reset hooks on retry
+          const jitterMs = Math.floor(Math.random() * 50) + 10;
+          await new Promise((resolve) => setTimeout(resolve, jitterMs));
+          continue;
+        }
+
+        const durationMs = Date.now() - startTime;
+        this.logger?.debug?.(
+          `Transaction rolled back for '${context.db}' after ${durationMs}ms`,
+          'TenantTransactionService',
+        );
+        throw err;
+      }
     }
 
     const durationMs = Date.now() - startTime;

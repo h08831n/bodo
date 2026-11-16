@@ -26,9 +26,18 @@ else
 end
 `;
 
+export interface RateLimitConsumeOptions {
+  limit: number;
+  windowSec: number;
+  blockSec?: number;
+}
+
+export type RateLimitOptions = RateLimitConsumeOptions;
+
 export interface RateLimitResult {
   allowed: boolean;
   remaining: number;
+  retryAfterSec: number;
   retryAfterSeconds: number;
   limit: number;
 }
@@ -42,11 +51,19 @@ export class RateLimitService {
   /**
    * Consumes a point in sliding window rate limiter atomically.
    */
-  async consume(key: string, limit: number, durationSeconds: number): Promise<RateLimitResult> {
+  async consume(
+    key: string,
+    limitOrOptions: number | RateLimitOptions,
+    durationSeconds?: number,
+  ): Promise<RateLimitResult> {
     try {
+      const limit = typeof limitOrOptions === 'number' ? limitOrOptions : limitOrOptions.limit;
+      const windowSec =
+        typeof limitOrOptions === 'number' ? (durationSeconds ?? 60) : limitOrOptions.windowSec;
+
       const redis = this.redisService.getClient();
       const now = Date.now();
-      const windowMs = durationSeconds * 1000;
+      const windowMs = windowSec * 1000;
 
       const res = (await redis.eval(RATE_LIMIT_LUA_SCRIPT, 1, key, now, windowMs, limit)) as [
         number,
@@ -61,6 +78,7 @@ export class RateLimitService {
       return {
         allowed,
         remaining,
+        retryAfterSec: retryAfterSeconds,
         retryAfterSeconds,
         limit,
       };

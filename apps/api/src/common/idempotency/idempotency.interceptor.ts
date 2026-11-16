@@ -5,10 +5,11 @@ import {
   CallHandler,
   ConflictException,
   UnprocessableEntityException,
+  Optional,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Observable, of } from 'rxjs';
-import { tap, catchError } from 'rxjs/operators';
+import { mergeMap, catchError } from 'rxjs/operators';
 import { createHash } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { RedisService, tenantKey, globalKey } from '../../infra/redis';
@@ -28,8 +29,8 @@ interface StoredIdempotencyRecord {
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
   constructor(
-    private readonly reflector: Reflector,
     private readonly redisService: RedisService,
+    @Optional() private readonly reflector?: Reflector,
   ) {}
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
@@ -38,7 +39,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const res = httpContext.getResponse<Response>();
 
     const options =
-      this.reflector.getAllAndOverride<IdempotentOptions>(IDEMPOTENT_OPTIONS_KEY, [
+      this.reflector?.getAllAndOverride<IdempotentOptions>(IDEMPOTENT_OPTIONS_KEY, [
         context.getHandler(),
         context.getClass(),
       ]) ?? {};
@@ -79,13 +80,17 @@ export class IdempotencyInterceptor implements NestInterceptor {
         }
 
         // Replay cached response
+        res.setHeader('Idempotency-Replayed', 'true');
         res.setHeader('X-Idempotency', 'HIT');
-        if (stored.status) {
+        if (stored.status && typeof res.status === 'function') {
           res.status(stored.status);
         }
         return of(stored.body);
       } catch (err) {
         if (err instanceof ConflictException || err instanceof UnprocessableEntityException) {
+          throw err;
+        }
+        if (!(err instanceof SyntaxError)) {
           throw err;
         }
         // If corrupted JSON in Redis, overwrite below
@@ -117,7 +122,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const ttl = options.ttlSeconds ?? DEFAULT_TTL_SECONDS;
 
     return next.handle().pipe(
-      tap(async (responseBody) => {
+      mergeMap(async (responseBody) => {
         const statusCode = res.statusCode || 200;
         if (statusCode < 500) {
           const finalRecord: StoredIdempotencyRecord = {
@@ -128,6 +133,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
           };
           await redis.set(redisKey, JSON.stringify(finalRecord), 'EX', ttl);
         }
+        return responseBody;
       }),
       catchError(async (err) => {
         // If server 5xx error, remove pending lock so user can retry safely

@@ -44,7 +44,11 @@ function sanitizeObject(obj: unknown): unknown {
   if (obj !== null && typeof obj === 'object') {
     const res: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(obj)) {
-      res[k] = sanitizeObject(v);
+      if (/password|token|secret|authorization|cookie|apikey/i.test(k)) {
+        res[k] = '[REDACTED]';
+      } else {
+        res[k] = sanitizeObject(v);
+      }
     }
     return res;
   }

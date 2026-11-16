@@ -171,6 +171,7 @@ jobs:
 
       - name: Build API Docker Image
         run: |
+          set -eo pipefail
           docker build -f apps/api/Dockerfile -t bodo-api:ci . 2>&1 | tee docker-api.log || {
             echo "### Docker API Build Failure Log" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
@@ -181,6 +182,7 @@ jobs:
 
       - name: Build Web Docker Image
         run: |
+          set -eo pipefail
           docker build -f apps/web/Dockerfile -t bodo-web:ci . 2>&1 | tee docker-web.log || {
             echo "### Docker Web Build Failure Log" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
@@ -270,6 +272,7 @@ jobs:
 
       - name: Run Database Integration Tests
         run: |
+          set -eo pipefail
           pnpm test:integration 2>&1 | tee test-output.log || {
             echo "### Integration Test Failure Log" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY

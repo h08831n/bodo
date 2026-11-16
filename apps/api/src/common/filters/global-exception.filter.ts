@@ -41,14 +41,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     }
     // 2. Body-parser malformed JSON or payload too large
     else if (
-      exception instanceof SyntaxError &&
-      'status' in exception &&
-      (exception as unknown as Record<string, unknown>).status === 400 &&
-      'body' in exception
+      (exception instanceof SyntaxError &&
+        ((exception as unknown as Record<string, unknown>).status === 400 ||
+          'body' in exception ||
+          (exception as unknown as Record<string, unknown>).type === 'entity.parse.failed')) ||
+      (typeof exception === 'object' &&
+        exception !== null &&
+        (exception as Record<string, unknown>).type === 'entity.parse.failed')
     ) {
       status = HttpStatus.BAD_REQUEST;
       code = 'VALIDATION_FAILED';
-      message = 'قالب JSON نامعتبر است.';
+      message = 'قالب داده ارسالی (JSON) نامعتبر است.';
     } else if (
       typeof exception === 'object' &&
       exception !== null &&
@@ -153,7 +156,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         switch (status) {
           case HttpStatus.BAD_REQUEST:
             code = 'VALIDATION_FAILED';
-            if (message === 'Bad Request') message = 'درخواست نامعتبر است.';
+            if (
+              message === 'Bad Request' ||
+              /JSON|Unexpected token|Unterminated string|Expected property name|is not valid JSON/i.test(
+                message,
+              )
+            ) {
+              message = 'قالب داده ارسالی (JSON) نامعتبر است.';
+            }
             break;
           case HttpStatus.UNAUTHORIZED:
             code = 'UNAUTHENTICATED';
