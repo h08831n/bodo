@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { spawnSync } from 'child_process';
+import { spawn } from 'child_process';
 import archiver from 'archiver';
 import pg from 'pg';
 import request from 'supertest';
@@ -67,6 +67,7 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
   let controller: DatabaseManagerController;
   let app: INestApplication;
   let adminToken: string;
+  let testApiUrl: string;
 
   let isDbConnected = false;
 
@@ -129,6 +130,11 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
 
     // Boot full test app for real HTTP testing
     app = await createTestApp();
+    await app.listen(0, '127.0.0.1');
+    const address = app.getHttpServer().address();
+    const serverPort = typeof address === 'object' && address ? address.port : 3000;
+    testApiUrl = `http://127.0.0.1:${serverPort}`;
+
     const loginRes = await request(app.getHttpServer())
       .post('/v1/admin/login')
       .send({ password: process.env.MASTER_PASSWORD || 'MasterSecurePassword2026!' });
@@ -987,53 +993,45 @@ describe('Database Manager Service Integration Tests (S1.4)', () => {
   });
 
   describe('Test 25: Automated CLI non-interactive execution tests with invalid inputs', () => {
-    it('CLI rejects password <10 characters with non-zero exit code and informative message', () => {
-      const cliPath = path.resolve(__dirname, '../../../../scripts/db-manager.mjs');
-      const result = spawnSync('node', [cliPath, 'create', 'testcli_db', '--pass', '12345'], {
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          MASTER_PASSWORD: 'MasterSecurePassword2026!',
-        },
-      });
+    const cliPath = path.resolve(__dirname, '../../../../scripts/db-manager.mjs');
 
-      expect(result.status).not.toBe(0);
-      const combinedOutput = (result.stdout || '') + (result.stderr || '');
-      expect(combinedOutput).toMatch(/حداقل ۱۰ کاراکتر/);
-    });
-
-    it('CLI rejects delete on non-existent database with non-zero exit code and DATABASE_NOT_FOUND', () => {
-      const cliPath = path.resolve(__dirname, '../../../../scripts/db-manager.mjs');
-      const result = spawnSync(
-        'node',
-        [cliPath, 'delete', 'nonexistent_test_cli_db', '--confirm', 'nonexistent_test_cli_db'],
-        {
-          encoding: 'utf8',
+    const runCli = (args: string[]): Promise<{ status: number | null; output: string }> => {
+      return new Promise((resolve) => {
+        const child = spawn('node', [cliPath, ...args], {
           env: {
             ...process.env,
+            API_URL: testApiUrl,
             MASTER_PASSWORD: 'MasterSecurePassword2026!',
           },
-        },
-      );
+        });
+        let output = '';
+        child.stdout?.on('data', (d) => (output += d));
+        child.stderr?.on('data', (d) => (output += d));
+        child.on('close', (status) => resolve({ status, output }));
+      });
+    };
 
+    it('CLI rejects password <10 characters with non-zero exit code and informative message', async () => {
+      const result = await runCli(['create', 'testcli_db', '--pass', '12345']);
       expect(result.status).not.toBe(0);
-      const combinedOutput = (result.stdout || '') + (result.stderr || '');
-      expect(combinedOutput).toMatch(/DATABASE_NOT_FOUND|یافت نشد/);
+      expect(result.output).toMatch(/حداقل ۱۰ کاراکتر/);
     });
 
-    it('CLI rejects create command without name argument with non-zero exit code', () => {
-      const cliPath = path.resolve(__dirname, '../../../../scripts/db-manager.mjs');
-      const result = spawnSync('node', [cliPath, 'create'], {
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          MASTER_PASSWORD: 'MasterSecurePassword2026!',
-        },
-      });
-
+    it('CLI rejects delete on non-existent database with non-zero exit code and DATABASE_NOT_FOUND', async () => {
+      const result = await runCli([
+        'delete',
+        'nonexistent_test_cli_db',
+        '--confirm',
+        'nonexistent_test_cli_db',
+      ]);
       expect(result.status).not.toBe(0);
-      const combinedOutput = (result.stdout || '') + (result.stderr || '');
-      expect(combinedOutput).toMatch(/Usage:/);
+      expect(result.output).toMatch(/DATABASE_NOT_FOUND|یافت نشد/);
+    });
+
+    it('CLI rejects create command without name argument with non-zero exit code', async () => {
+      const result = await runCli(['create']);
+      expect(result.status).not.toBe(0);
+      expect(result.output).toMatch(/Usage:/);
     });
   });
 });
