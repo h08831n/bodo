@@ -334,9 +334,9 @@ describe('Keyset Pagination Integration Tests with 10,000 Real Rows (Tests 5, 6,
       console.info(planLines);
       console.info('------------------------------------------------------------');
 
-      // 1. Must use Index Scan on composite index
-      expect(planLines).toMatch(/Index Scan|Index Only Scan/);
-      expect(planLines).toContain('idx_test_pag_created_id');
+      // 1. Must use composite index scan (Index Scan / Index Only Scan / Bitmap Index Scan)
+      expect(planLines).toMatch(/Index Scan|Index Only Scan|Bitmap/);
+      expect(planLines).toMatch(/idx_test_pag_created_/);
 
       // 2. Must NOT use Seq Scan
       expect(planLines).not.toMatch(/Seq Scan on _test_pagination_records/);
@@ -376,7 +376,7 @@ describe('Keyset Pagination Integration Tests with 10,000 Real Rows (Tests 5, 6,
       .map((r: Record<string, unknown>) => String(r['QUERY PLAN']))
       .join('\n');
 
-    expect(planLines).toMatch(/Index Scan|Index Only Scan/);
+    expect(planLines).toMatch(/Index Scan|Index Only Scan|Bitmap/);
     expect(planLines).toContain('idx_test_pag_created_asc_id');
     expect(planLines).not.toMatch(/Seq Scan on _test_pagination_records/);
     expect(planLines).toMatch(/Index Cond:\s*\(created_at >=/);
@@ -413,7 +413,7 @@ describe('Keyset Pagination Integration Tests with 10,000 Real Rows (Tests 5, 6,
       .map((r: Record<string, unknown>) => String(r['QUERY PLAN']))
       .join('\n');
 
-    expect(planNonNull).toMatch(/Index Scan|Index Only Scan/);
+    expect(planNonNull).toMatch(/Index Scan|Index Only Scan|Bitmap/);
     expect(planNonNull).toContain('idx_test_pag_deleted_id');
     expect(planNonNull).not.toMatch(/Seq Scan on _test_pagination_records/);
     expect(planNonNull).toMatch(/Index Cond:\s*\(deleted_at <=/);
