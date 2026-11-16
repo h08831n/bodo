@@ -1,5 +1,6 @@
 import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { randomUUID } from 'node:crypto';
 import { ZodError } from 'zod';
 import { ApiErrorResponse, ErrorCode } from '@bodo/contracts';
 import { LoggerService } from '../logger/logger.service';
@@ -17,7 +18,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
-    const requestId = request.requestId || 'unknown';
+    const requestId =
+      request.requestId ||
+      (request.headers ? (request.headers['x-request-id'] as string) : undefined) ||
+      randomUUID();
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let code: ErrorCode = 'INTERNAL';
