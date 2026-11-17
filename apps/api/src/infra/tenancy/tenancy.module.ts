@@ -3,6 +3,7 @@ import { RedisModule } from '../redis/redis.module';
 import { ConfigStoreModule } from '../config-store/config-store.module';
 import { TenantClientManager } from './tenant-client-manager';
 import { TenantPrismaService } from './tenant-prisma.service';
+import { TenantTransactionService } from './tenant-transaction.service';
 import { MaintenanceService } from './maintenance.service';
 import { DatabaseRegistryService } from './database-registry.service';
 import { TenantRunnerService } from './tenant-runner.service';
@@ -15,6 +16,7 @@ import { TenantMiddleware } from './tenant.middleware';
   providers: [
     TenantClientManager,
     TenantPrismaService,
+    TenantTransactionService,
     MaintenanceService,
     DatabaseRegistryService,
     TenantRunnerService,
@@ -24,6 +26,7 @@ import { TenantMiddleware } from './tenant.middleware';
   exports: [
     TenantClientManager,
     TenantPrismaService,
+    TenantTransactionService,
     MaintenanceService,
     DatabaseRegistryService,
     TenantRunnerService,

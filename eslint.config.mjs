@@ -1,6 +1,7 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import prettierConfig from 'eslint-config-prettier';
+import boundaries from 'eslint-plugin-boundaries';
 
 export default tseslint.config(
   js.configs.recommended,
@@ -19,7 +20,7 @@ export default tseslint.config(
     ],
   },
   {
-    files: ['**/*.js', '**/*.cjs'],
+    files: ['**/*.js', '**/*.cjs', '**/*.mjs'],
     rules: {
       'no-undef': 'off',
       '@typescript-eslint/no-require-imports': 'off',
@@ -33,6 +34,57 @@ export default tseslint.config(
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       'no-console': ['warn', { allow: ['warn', 'error', 'info'] }],
+    },
+  },
+  {
+    files: ['apps/api/src/**/*.ts'],
+    plugins: {
+      boundaries,
+    },
+    settings: {
+      'boundaries/elements': [
+        {
+          type: 'module',
+          pattern: ['apps/api/src/modules/*', 'src/modules/*'],
+          mode: 'folder',
+        },
+        {
+          type: 'infra',
+          pattern: ['apps/api/src/infra/*', 'src/infra/*'],
+          mode: 'folder',
+        },
+      ],
+    },
+    rules: {
+      'boundaries/entry-point': [
+        'error',
+        {
+          default: 'disallow',
+          rules: [
+            {
+              target: ['module', 'infra'],
+              allow: 'index.ts',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['**/*.controller.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['*tenant-transaction.service*'],
+              message:
+                'Controllers must not manage database transactions directly. Use domain/application services instead.',
+            },
+          ],
+        },
+      ],
     },
   },
 );

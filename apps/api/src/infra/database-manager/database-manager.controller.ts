@@ -22,19 +22,17 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request, Response } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
+import { DatabaseListItem, BackupListItem, AdminJobStatus } from '@bodo/contracts';
 import {
-  CreateDatabaseRequestSchema,
-  DuplicateDatabaseRequestSchema,
-  RestoreDatabaseRequestSchema,
-  DeleteDatabaseRequestSchema,
-  UpgradeDatabaseRequestSchema,
-  RepairDatabaseRequestSchema,
-  SetMaintenanceRequestSchema,
-  SetDomainRequestSchema,
-  DatabaseListItem,
-  BackupListItem,
-  AdminJobStatus,
-} from '@bodo/contracts';
+  CreateDatabaseDto,
+  DuplicateDatabaseDto,
+  RestoreDatabaseDto,
+  DeleteDatabaseDto,
+  UpgradeDatabaseDto,
+  RepairDatabaseDto,
+  SetMaintenanceDto,
+  SetDomainDto,
+} from './dto/database-manager.dto';
 import { MasterAdminGuard } from '../admin/master-admin.guard';
 import { AdminAuditLogger, AdminAuditEntry } from '../admin/admin-audit.logger';
 import { DatabaseManagerService } from './database-manager.service';
@@ -64,9 +62,11 @@ export class DatabaseManagerController {
 
   @Post('databases')
   @HttpCode(HttpStatus.ACCEPTED)
-  async createDatabase(@Body() rawBody: unknown, @Req() req: Request): Promise<{ jobId: string }> {
+  async createDatabase(
+    @Body() body: CreateDatabaseDto,
+    @Req() req: Request,
+  ): Promise<{ jobId: string }> {
     const { clientIp, requestId } = this.getRequestMeta(req);
-    const body = CreateDatabaseRequestSchema.parse(rawBody);
     const dbName = `erp_${body.name.toLowerCase().trim()}`;
 
     // 1. Check if database already exists
@@ -112,7 +112,7 @@ export class DatabaseManagerController {
   @HttpCode(HttpStatus.ACCEPTED)
   async duplicateDatabase(
     @Param('name') name: string,
-    @Body() rawBody: unknown,
+    @Body() body: DuplicateDatabaseDto,
     @Req() req: Request,
   ): Promise<{ jobId: string }> {
     const { clientIp, requestId } = this.getRequestMeta(req);
@@ -127,7 +127,6 @@ export class DatabaseManagerController {
       });
     }
 
-    const body = DuplicateDatabaseRequestSchema.parse(rawBody);
     const targetDbName = `erp_${body.newName.toLowerCase().trim()}`;
 
     // 2. Check if target database already exists
@@ -334,15 +333,15 @@ export class DatabaseManagerController {
   )
   async restoreDatabase(
     @UploadedFile() file: { path?: string } | undefined,
-    @Body() rawBody: Record<string, unknown>,
+    @Body() body: RestoreDatabaseDto,
     @Req() req: Request,
   ): Promise<{ jobId: string }> {
     const { clientIp, requestId } = this.getRequestMeta(req);
     let zipPath = file?.path;
 
-    // Alternatively support filePath in body for server-local backups or tests
-    if (!zipPath && typeof rawBody?.filePath === 'string') {
-      zipPath = rawBody.filePath as string;
+    const bodyObj = body as unknown as { filePath?: string };
+    if (!zipPath && typeof bodyObj?.filePath === 'string') {
+      zipPath = bodyObj.filePath;
     }
 
     if (!zipPath || !fs.existsSync(zipPath)) {
@@ -360,7 +359,6 @@ export class DatabaseManagerController {
       });
     }
 
-    const body = RestoreDatabaseRequestSchema.parse(rawBody);
     const targetDbName = `erp_${body.newName.toLowerCase().trim()}`;
 
     // 1. Check if target database already exists
@@ -407,7 +405,7 @@ export class DatabaseManagerController {
   @HttpCode(HttpStatus.ACCEPTED)
   async deleteDatabase(
     @Param('name') name: string,
-    @Body() rawBody: unknown,
+    @Body() body: DeleteDatabaseDto,
     @Req() req: Request,
   ): Promise<{ jobId: string }> {
     const { clientIp, requestId } = this.getRequestMeta(req);
@@ -424,7 +422,6 @@ export class DatabaseManagerController {
     }
 
     // 2. Validate confirmation name
-    const body = DeleteDatabaseRequestSchema.parse(rawBody);
     if (body.confirmName !== dbName && body.confirmName !== slug && body.confirmName !== name) {
       throw new BadRequestException({
         code: 'VALIDATION_FAILED',
@@ -472,7 +469,7 @@ export class DatabaseManagerController {
   @HttpCode(HttpStatus.ACCEPTED)
   async upgradeDatabase(
     @Param('name') name: string,
-    @Body() rawBody: unknown,
+    @Body() body: UpgradeDatabaseDto,
     @Req() req: Request,
   ): Promise<{ jobId: string }> {
     const { clientIp, requestId } = this.getRequestMeta(req);
@@ -494,7 +491,6 @@ export class DatabaseManagerController {
       });
     }
 
-    const body = UpgradeDatabaseRequestSchema.parse(rawBody || {});
     const jobId = await this.jobQueue.enqueueJob(
       'upgrade',
       dbName,
@@ -517,7 +513,7 @@ export class DatabaseManagerController {
   @Post('databases/:name/repair')
   async repairDatabase(
     @Param('name') name: string,
-    @Body() rawBody: unknown,
+    @Body() body: RepairDatabaseDto,
     @Req() req: Request,
   ): Promise<{ message: string; rolledBackMigration?: string }> {
     const { clientIp, requestId } = this.getRequestMeta(req);
@@ -530,8 +526,6 @@ export class DatabaseManagerController {
         message: `پایگاه داده "${dbName}" یافت نشد.`,
       });
     }
-
-    const body = RepairDatabaseRequestSchema.parse(rawBody);
 
     try {
       const res = await this.dbManager.repairDatabase(name, body.confirm, body.migration);
@@ -561,7 +555,7 @@ export class DatabaseManagerController {
   @Post('databases/:name/maintenance')
   async setMaintenance(
     @Param('name') name: string,
-    @Body() rawBody: unknown,
+    @Body() body: SetMaintenanceDto,
     @Req() req: Request,
   ): Promise<{ message: string }> {
     const { clientIp, requestId } = this.getRequestMeta(req);
@@ -574,8 +568,6 @@ export class DatabaseManagerController {
         message: `پایگاه داده "${dbName}" یافت نشد.`,
       });
     }
-
-    const body = SetMaintenanceRequestSchema.parse(rawBody);
 
     try {
       await this.dbManager.setMaintenance(name, body.enabled, body.reason, body.confirm);
@@ -607,7 +599,7 @@ export class DatabaseManagerController {
   @Put('databases/:name/domain')
   async setDomain(
     @Param('name') name: string,
-    @Body() rawBody: unknown,
+    @Body() body: SetDomainDto,
     @Req() req: Request,
   ): Promise<{ message: string }> {
     const { clientIp, requestId } = this.getRequestMeta(req);
@@ -620,8 +612,6 @@ export class DatabaseManagerController {
         message: `پایگاه داده "${dbName}" یافت نشد.`,
       });
     }
-
-    const body = SetDomainRequestSchema.parse(rawBody);
 
     try {
       await this.dbManager.setDomain(name, body.host);

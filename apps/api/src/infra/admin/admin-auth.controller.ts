@@ -10,11 +10,8 @@ import {
   HttpException,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import {
-  AdminLoginRequestSchema,
-  AdminLoginResponse,
-  ChangeMasterPasswordRequestSchema,
-} from '@bodo/contracts';
+import { AdminLoginDto, ChangeMasterPasswordDto } from './dto/admin-auth.dto';
+import { AdminLoginResponse } from '@bodo/contracts';
 import { MasterAuthService } from './master-auth.service';
 import { MasterAdminGuard, PublicAdmin } from './master-admin.guard';
 import { AdminAuditLogger } from './admin-audit.logger';
@@ -37,8 +34,7 @@ export class AdminAuthController {
   @PublicAdmin()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body() rawBody: unknown, @Req() req: Request): Promise<AdminLoginResponse> {
-    const body = AdminLoginRequestSchema.parse(rawBody);
+  async login(@Body() body: AdminLoginDto, @Req() req: Request): Promise<AdminLoginResponse> {
     const { clientIp, requestId } = this.getRequestMeta(req);
 
     // 1. Rate Limiting Check
@@ -97,10 +93,9 @@ export class AdminAuthController {
   @Post('change-master-password')
   @HttpCode(HttpStatus.OK)
   async changePassword(
-    @Body() rawBody: unknown,
+    @Body() body: ChangeMasterPasswordDto,
     @Req() req: Request,
   ): Promise<{ message: string }> {
-    const body = ChangeMasterPasswordRequestSchema.parse(rawBody);
     const { clientIp, requestId } = this.getRequestMeta(req);
 
     try {

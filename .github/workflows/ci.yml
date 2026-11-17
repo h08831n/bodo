@@ -6,10 +6,17 @@ on:
   pull_request:
     branches: [main]
 
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
 jobs:
   quality:
     name: Lint, Typecheck, Test & Build
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -eo pipefail {0}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -43,14 +50,31 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build packages
+        run: pnpm build
+
       - name: Lint
         run: pnpm lint
 
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Build
-        run: pnpm build
+      - name: Export OpenAPI Specification
+        run: pnpm openapi:export
+
+      - name: Verify OpenAPI Specification Validity
+        shell: bash
+        run: |
+          test -f apps/api/dist/openapi.json
+          node -e "const doc = JSON.parse(fs.readFileSync('apps/api/dist/openapi.json', 'utf8')); if (!doc.openapi.startsWith('3.')) throw new Error('Invalid OpenAPI version: ' + doc.openapi);"
+          echo "OpenAPI 3.0 specification successfully validated."
+
+      - name: Upload OpenAPI Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-specification
+          path: apps/api/dist/openapi.json
+          if-no-files-found: error
 
       - name: Build Storybook
         run: pnpm --filter @bodo/ui build-storybook
@@ -130,6 +154,9 @@ jobs:
     name: Verify Docker Builds
     needs: quality
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -eo pipefail {0}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -154,6 +181,7 @@ jobs:
 
       - name: Build API Docker Image
         run: |
+          set -eo pipefail
           docker build -f apps/api/Dockerfile -t bodo-api:ci . 2>&1 | tee docker-api.log || {
             echo "### Docker API Build Failure Log" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
@@ -164,6 +192,7 @@ jobs:
 
       - name: Build Web Docker Image
         run: |
+          set -eo pipefail
           docker build -f apps/web/Dockerfile -t bodo-web:ci . 2>&1 | tee docker-web.log || {
             echo "### Docker Web Build Failure Log" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
@@ -178,6 +207,9 @@ jobs:
   database-integration:
     name: Database Integration & Drift Check
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -eo pipefail {0}
     services:
       postgres:
         image: postgres:16-alpine
@@ -233,6 +265,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build packages
+        run: pnpm build
+
       - name: Run Check Drift Filter Unit Tests
         run: node --test scripts/__tests__/check-drift.test.mjs
 
@@ -240,6 +275,15 @@ jobs:
         run: pnpm db:init-roles
         env:
           DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
+
+      - name: Setup Development Database
+        run: pnpm db:setup-dev
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
+          POSTGRES_HOST: 127.0.0.1
+          POSTGRES_PORT: 5433
+          REDIS_URL: redis://:redispassword@127.0.0.1:6379
+          REDIS_PASSWORD: redispassword
 
       - name: Check Database Schema Drift
         run: pnpm db:check-drift
@@ -252,24 +296,27 @@ jobs:
           sudo apt-get install -y postgresql-client
 
       - name: Run Database Integration Tests
-        run: |
-          pnpm test:integration 2>&1 | tee test-output.log || {
-            echo "### Integration Test Failure Log" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            tail -n 120 test-output.log >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            exit 1
-          }
+        run: pnpm test:integration --verbose
         env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
           TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
           POSTGRES_HOST: 127.0.0.1
           POSTGRES_PORT: 5433
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          ERP_PROVISIONER_PASSWORD: provisioner_secret_change_in_prod
+          ERP_MIGRATOR_PASSWORD: migrator_secret_change_in_prod
+          ERP_APP_PASSWORD: app_secret_change_in_prod
           REDIS_URL: redis://:redispassword@127.0.0.1:6379
           REDIS_PASSWORD: redispassword
+          NODE_ENV: test
 
   dev-setup-verification:
     name: Verify Developer Setup Flow (docker-compose.dev & db:setup-dev)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -eo pipefail {0}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

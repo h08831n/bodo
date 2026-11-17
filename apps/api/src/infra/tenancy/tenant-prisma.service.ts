@@ -1,15 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import type { PrismaClient } from '@prisma/client';
-import { getCurrentTenantClient, tryGetCurrentDb } from './tenant-context';
+import { getTenantContext, tryGetCurrentDb } from './tenant-context';
 
 @Injectable()
 export class TenantPrismaService {
   /**
-   * Returns the PrismaClient instance attached to the current execution context.
+   * Returns the PrismaClient or active TransactionClient instance attached to the current execution context.
+   * If a transaction is active in the current TenantContext, operations automatically participate in it.
    * @throws Error if called outside a valid tenant scope.
    */
   get client(): PrismaClient {
-    const client = getCurrentTenantClient();
+    const context = getTenantContext();
+    if (context?.tx) {
+      return context.tx as unknown as PrismaClient;
+    }
+    const client = context?.client;
     if (!client) {
       const currentDb = tryGetCurrentDb();
       if (!currentDb) {

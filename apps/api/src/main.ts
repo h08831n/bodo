@@ -1,9 +1,13 @@
 import { NestFactory } from '@nestjs/core';
-import helmet from 'helmet';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { patchSwagger } from './common/swagger/patch-swagger';
+import { setupExpressApp } from './common/bootstrap/setup-express';
 import { AppModule } from './app.module';
 import { getEnv } from './config/env.config';
 import { LoggerService } from './common/logger/logger.service';
-import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+
+// Patch NestJS Swagger for automatic Zod schema reflection
+patchSwagger();
 
 async function bootstrap() {
   // 1. Validate environment configuration on boot
@@ -16,17 +20,15 @@ async function bootstrap() {
   const logger = app.get(LoggerService);
   app.useLogger(logger);
 
-  // Trust proxy for secure and accurate client IP extraction behind Nginx
+  // Foundational Express middleware: security headers, requestId, limits, and guards
   const expressApp = app.getHttpAdapter().getInstance();
-  expressApp.set('trust proxy', true);
+  setupExpressApp(expressApp);
 
-  // 2. Global Exception Filter
-  app.useGlobalFilters(new GlobalExceptionFilter(logger));
+  // Global pipes, interceptors, and filters are registered via APP_PIPE,
+  // APP_INTERCEPTOR, and APP_FILTER in AppModule to ensure unified behavior
+  // across production bootstrap and test environments (createTestApp).
 
-  // 3. Security Headers (helmet)
-  app.use(helmet());
-
-  // 4. CORS with allowed origins from env
+  // 6. CORS with allowed origins from env
   const allowedOrigins = env.CORS_ORIGINS.split(',').map((origin) => origin.trim());
   app.enableCors({
     origin: (
@@ -43,10 +45,22 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // 5. Graceful Shutdown
+  // 7. Swagger Documentation
+  if (env.OPENAPI_ENABLED) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Bodo ERP API')
+      .setDescription('Bodo Multi-Tenant Steel Trading ERP API')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('docs', app, document);
+  }
+
+  // 8. Graceful Shutdown
   app.enableShutdownHooks();
 
-  // 6. Tenancy Bootstrap (Rehydrate durable maintenance flags and optional auto-migrate)
+  // 9. Tenancy Bootstrap (Rehydrate durable maintenance flags and optional auto-migrate)
   try {
     const { DatabaseRegistryService } = await import('./infra/tenancy/database-registry.service');
     const { MaintenanceService } = await import('./infra/tenancy/maintenance.service');

@@ -1,11 +1,13 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 
 export interface TenantContextPayload {
   db: string;
   requestId?: string;
   userId?: string;
   client?: PrismaClient;
+  tx?: Prisma.TransactionClient;
+  afterCommitHooks?: Array<() => Promise<void> | void>;
 }
 
 const tenantStorage = new AsyncLocalStorage<TenantContextPayload>();

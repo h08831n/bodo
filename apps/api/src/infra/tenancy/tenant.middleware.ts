@@ -14,7 +14,15 @@ export class TenantMiddleware implements NestMiddleware {
   private readonly resolvers: TenantResolver[];
 
   // Paths exempt from tenant database context
-  private readonly exemptPaths = ['/health', '/health/live', '/health/ready', '/favicon.ico'];
+  private readonly exemptPaths = [
+    '/health',
+    '/health/live',
+    '/health/ready',
+    '/favicon.ico',
+    '/docs',
+    '/docs-json',
+    '/docs-yaml',
+  ];
 
   constructor(
     private readonly databaseRegistry: DatabaseRegistryService,

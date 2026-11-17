@@ -82,4 +82,48 @@ describe('Contracts Schema Validation', () => {
     const parsed = HealthStatusSchema.safeParse(health);
     expect(parsed.success).toBe(true);
   });
+
+  it('validates S1.5 error codes and pagination contract', () => {
+    for (const code of [
+      'PAYLOAD_TOO_LARGE',
+      'UNSUPPORTED_MEDIA_TYPE',
+      'IDEMPOTENCY_KEY_REUSED',
+      'VERSION_CONFLICT',
+    ] as const) {
+      const parsed = ApiErrorResponseSchema.safeParse({
+        error: { code, message: 'خطا' },
+      });
+      expect(parsed.success).toBe(true);
+    }
+  });
+
+  it('validates pagination schemas', async () => {
+    const { PaginationQuerySchema, paginated } = await import('../index.js');
+    const { z } = await import('zod');
+
+    const defaultQuery = PaginationQuerySchema.parse({});
+    expect(defaultQuery.limit).toBe(50);
+    expect(defaultQuery.withTotal).toBe(false);
+
+    const customQuery = PaginationQuerySchema.parse({
+      limit: '25',
+      cursor: 'abc',
+      sort: 'createdAt:desc',
+      withTotal: 'true',
+    });
+    expect(customQuery.limit).toBe(25);
+    expect(customQuery.cursor).toBe('abc');
+    expect(customQuery.withTotal).toBe(true);
+
+    const ItemSchema = z.object({ id: z.string(), name: z.string() });
+    const PaginatedItemsSchema = paginated(ItemSchema);
+
+    const validPage = PaginatedItemsSchema.safeParse({
+      items: [{ id: '1', name: 'Item 1' }],
+      nextCursor: 'next-1',
+      prevCursor: null,
+      totalCount: 100,
+    });
+    expect(validPage.success).toBe(true);
+  });
 });
