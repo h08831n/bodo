@@ -81,8 +81,16 @@ jobs:
 
       - name: Test (Unit tests & Check no external URLs)
         run: |
-          pnpm test
+          pnpm test -- --verbose 2>&1 | tee unit-tests.log
           node --test scripts/__tests__/check-compose-conflict.test.mjs
+
+      - name: Upload Unit Test Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-logs
+          path: unit-tests.log
+          if-no-files-found: ignore
 
       - name: API Smoke Test (Background boot & health/live probe)
         shell: bash
@@ -296,7 +304,7 @@ jobs:
           sudo apt-get install -y postgresql-client
 
       - name: Run Database Integration Tests
-        run: pnpm test:integration --verbose
+        run: pnpm test:integration --verbose 2>&1 | tee integration-tests.log
         env:
           DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
           TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
@@ -310,6 +318,14 @@ jobs:
           REDIS_URL: redis://:redispassword@127.0.0.1:6379
           REDIS_PASSWORD: redispassword
           NODE_ENV: test
+
+      - name: Upload Integration Test Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-logs
+          path: integration-tests.log
+          if-no-files-found: ignore
 
   dev-setup-verification:
     name: Verify Developer Setup Flow (docker-compose.dev & db:setup-dev)
