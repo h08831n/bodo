@@ -9,7 +9,30 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 
+function ensureRequiredPackagesBuilt() {
+  const utilsDist = path.resolve(projectRoot, 'packages/utils/dist/index.cjs');
+  const contractsDist = path.resolve(projectRoot, 'packages/contracts/dist/index.cjs');
+  if (!fs.existsSync(utilsDist) || !fs.existsSync(contractsDist)) {
+    console.log(
+      `[db:seed] Required package build outputs missing. Building @bodo/contracts and @bodo/utils...`,
+    );
+    const buildRes = spawnSync(
+      'pnpm',
+      ['turbo', 'run', 'build', '--filter=@bodo/contracts', '--filter=@bodo/utils'],
+      {
+        cwd: projectRoot,
+        stdio: 'inherit',
+        shell: process.platform === 'win32',
+      },
+    );
+    if (buildRes.status !== 0) {
+      throw new Error(`Failed to build @bodo/contracts and @bodo/utils for database seed.`);
+    }
+  }
+}
+
 async function runSeed() {
+  ensureRequiredPackagesBuilt();
   const config = getDbConfig();
   const appUrl = config.getAppUrl();
 

@@ -361,12 +361,6 @@ jobs:
       - name: Copy .env strictly from .env.example
         run: cp .env.example .env
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build packages
-        run: pnpm build
-
       - name: Start PostgreSQL via docker-compose.dev.yml
         run: |
           docker compose --env-file .env -f infra/docker-compose.dev.yml up -d postgres
@@ -387,8 +381,14 @@ jobs:
             exit 1
           fi
 
-      - name: Run Developer Database Setup (pnpm db:setup-dev)
+      - name: Install dependencies (clean checkout, no prior build)
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Developer Database Setup (pnpm db:setup-dev on clean checkout)
         run: pnpm db:setup-dev
+
+      - name: Run Tests (pnpm test on clean checkout)
+        run: pnpm test
 
       - name: Verify erp_dev contents (4 currencies, 7 lost reasons)
         run: pnpm db:verify-dev
