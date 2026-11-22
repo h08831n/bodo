@@ -812,22 +812,23 @@ Volumeها: `pgdata`، `filestore`، `backups`، `config` (master.json و domain
 
 هر گام با چک‌لیست تایید بسته می‌شود و commit/tag جدا دارد.
 
-| گام   | محتوا                                                                                                |
-| ----- | ---------------------------------------------------------------------------------------------------- |
-| S1.1  | اسکلت مونوریپو، ابزارها، CI، Docker Compose، health                                                  |
-| S1.2  | اسکیمای Prisma، مایگریشن `0001_init` (پارتیشن، GRANT، CHECK)، seed                                   |
-| S1.3  | زیرساخت چنددیتابیسی: TenantContext، TenantClientManager، TenantRunner، MigrationRunner، config-store |
-| S1.4  | Database Manager (API): ساخت، فهرست، کپی، بکاپ، بازیابی، حذف، ارتقا + تست‌های بند ۱۲                 |
-| S1.5  | زیرساخت api: خطاها، pagination، zod، لاگ، تراکنش و مدیریت context                                    |
-| S1.6  | Auth کامل (login با دیتابیس، refresh چرخشی، logout، قفل، sessions)                                   |
-| S1.7  | Users، Company Profile، Currencies                                                                   |
-| S1.8  | Groups، Permissions، Teams، Record Rules + تست‌های دسترسی                                            |
-| S1.9  | Audit، Outbox، Event Bus، Timeline، Sequences                                                        |
-| S1.10 | `packages/utils` (جلالی، اعتبارسنجی ایرانی، money) + تست                                             |
-| S1.11 | `packages/ui`: کامپوننت‌های پایه + Storybook + RTL                                                   |
-| S1.12 | AppShell، ورود، رجیستری ماژول، Database Manager UI، مدیریت کاربران/گروه‌ها، تنظیمات شرکت، PWA        |
-| S1.13 | Settings Engine + دلایل باخت                                                                         |
-| S1.14 | بکاپ شبانه، تست بازیابی، مستندات نهایی، تست پذیرش                                                    |
+| گام      | محتوا                                                                                                  | وضعیت             |
+| -------- | ------------------------------------------------------------------------------------------------------ | ----------------- |
+| S1.1     | اسکلت مونوریپو، ابزارها، CI، Docker Compose، health                                                    | تکمیل (s1.1-done) |
+| S1.2     | اسکیمای Prisma، مایگریشن `0001_init` (پارتیشن، GRANT، CHECK)، seed                                     | تکمیل (s1.2-done) |
+| S1.3     | زیرساخت چنددیتابیسی: TenantContext، TenantClientManager، TenantRunner، MigrationRunner، config-store   | تکمیل (s1.3-done) |
+| S1.4     | Database Manager (API): ساخت، فهرست، کپی، بکاپ، بازیابی، حذف، ارتقا + تست‌های بند ۱۲                   | تکمیل (s1.4-done) |
+| S1.5     | زیرساخت api: خطاها، pagination، zod، لاگ، تراکنش و مدیریت context                                      | تکمیل (s1.5-done) |
+| S1.6     | Auth کامل (login با دیتابیس، refresh چرخشی، logout، قفل، sessions، guards، registry)                   | گام جاری          |
+| S1.7     | Users، Company Settings، Currencies                                                                    | گام بعد           |
+| S1.10-12 | UI پایه‌ای: `packages/ui`، AppShell، صفحه ورود، مدیریت کاربران، تنظیمات شرکت، Database Manager UI، PWA | برنامه‌ریزی‌شده   |
+| S1.14    | بکاپ شبانه، تست بازیابی، مستندات نهایی، تست پذیرش                                                      | برنامه‌ریزی‌شده   |
+
+> **موکول‌شده به مرحله‌های بعد:**
+>
+> - **S1.8 سابق (Groups، Permissions پیشرفته، Teams، Record Rules):** موکول به مرحله‌ی ۳ (مخاطبین). در مرحله‌ی ۱ رجیستری دسترسی و احراز پایه بر اساس نقش ادمین پیاده می‌شود.
+> - **S1.9 سابق (Outbox، Event Bus، Timeline، Sequences):** موکول به اولین ماژول تولیدکننده‌ی رویداد.
+> - **S1.13 سابق (Settings Engine + دلایل باخت):** موکول به مرحله‌ی ۵ (فروش).
 
 ---
 
