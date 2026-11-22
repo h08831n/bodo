@@ -319,6 +319,23 @@ jobs:
           REDIS_PASSWORD: redispassword
           NODE_ENV: test
 
+      - name: Run S1.6 Authentication End-to-End Smoke Test
+        run: pnpm smoke
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
+          POSTGRES_HOST: 127.0.0.1
+          POSTGRES_PORT: 5433
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          ERP_PROVISIONER_PASSWORD: provisioner_secret_change_in_prod
+          ERP_MIGRATOR_PASSWORD: migrator_secret_change_in_prod
+          ERP_APP_PASSWORD: app_secret_change_in_prod
+          REDIS_URL: redis://:redispassword@127.0.0.1:6379
+          REDIS_PASSWORD: redispassword
+          PORT: 3000
+          MASTER_PASSWORD: MasterSecurePassword2026!
+          MASTER_PASSWORD_INITIAL: MasterSecurePassword2026!
+
       - name: Upload Integration Test Logs
         if: always()
         uses: actions/upload-artifact@v4
