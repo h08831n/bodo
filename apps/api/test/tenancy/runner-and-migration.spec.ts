@@ -302,4 +302,127 @@ describe('TenantRunner & MigrationRunner Invariants (Tests 10, 11)', () => {
     // Clean up db3 maintenance state
     await maintenanceService.clear(db3);
   });
+
+  it('12. MigrationRunner: upgrades a database created only with 0001_init to latest, preserving existing session rows and setting family_created_at = created_at', async () => {
+    const legacyDb = 'erp_test_legacy_upgrade';
+    const legacySuiteDir = path.resolve(__dirname, '../temp_legacy_suite');
+    const legacyMigrationsDir = path.join(legacySuiteDir, 'migrations');
+    const legacySchemaPath = path.join(legacySuiteDir, 'schema.prisma');
+
+    try {
+      // 1. Prepare legacy environment with ONLY 0001_init
+      fs.mkdirSync(path.join(legacyMigrationsDir, '0001_init'), { recursive: true });
+      fs.copyFileSync(
+        path.resolve(__dirname, '../../prisma/migrations/0001_init/migration.sql'),
+        path.join(legacyMigrationsDir, '0001_init/migration.sql'),
+      );
+
+      fs.writeFileSync(
+        legacySchemaPath,
+        `datasource db {
+          provider = "postgresql"
+          url      = env("DATABASE_URL")
+        }
+        generator client {
+          provider = "prisma-client-js"
+        }\n`,
+        'utf8',
+      );
+
+      // Create legacy database
+      await superuserPool.query(`DROP DATABASE IF EXISTS ${legacyDb} WITH (FORCE);`);
+      await superuserPool.query(`CREATE DATABASE ${legacyDb} OWNER erp_migrator;`);
+
+      // Baseline legacy DB with only 0001_init
+      const baselineResult = await migrationRunner.upgrade(legacyDb, {
+        schemaPath: legacySchemaPath,
+      });
+      expect(baselineResult.success).toBe(true);
+
+      const statusBaseline = await migrationRunner.status(legacyDb, legacyMigrationsDir);
+      expect(statusBaseline.applied).toEqual(['0001_init']);
+      expect(statusBaseline.pending).toEqual([]);
+
+      // 2. Insert a legacy user and session row with specific created_at
+      const testUserId = '11111111-1111-1111-1111-111111111111';
+      const testSessionId = '22222222-2222-2222-2222-222222222222';
+      const testFamilyId = '33333333-3333-3333-3333-333333333333';
+      const specificCreatedAt = new Date('2026-01-15T08:30:00.000Z');
+
+      const appPool = new pg.Pool({
+        host,
+        port,
+        user: 'erp_app',
+        password: env.ERP_APP_PASSWORD,
+        database: legacyDb,
+        max: 1,
+      });
+
+      await appPool.query(`
+        INSERT INTO users (id, username, password_hash, full_name, type, must_change_password, created_at, updated_at)
+        VALUES ('${testUserId}', 'legacy_test_user', 'mock_hash', 'Legacy User', 'INTERNAL', false, NOW(), NOW());
+      `);
+
+      await appPool.query(`
+        INSERT INTO sessions (id, user_id, refresh_token_hash, family_id, created_at, last_used_at, expires_at)
+        VALUES (
+          '${testSessionId}',
+          '${testUserId}',
+          'legacy_token_hash_abc',
+          '${testFamilyId}',
+          '${specificCreatedAt.toISOString()}',
+          '${specificCreatedAt.toISOString()}',
+          '2026-02-15T08:30:00.000Z'
+        );
+      `);
+
+      // 3. Upgrade legacy database to latest migrations (using real default migrations)
+      const upgradeToLatest = await migrationRunner.upgrade(legacyDb);
+      expect(upgradeToLatest.success).toBe(true);
+
+      // Verify status against real default migrations
+      const statusAfterUpgrade = await migrationRunner.status(legacyDb);
+      expect(statusAfterUpgrade.pending).toEqual([]);
+      expect(statusAfterUpgrade.applied).toContain('0001_init');
+      expect(statusAfterUpgrade.applied).toContain('0002_auth_sessions');
+
+      // 4. Assert session row: family_created_at must equal created_at, new columns exist and are null
+      const sessionRowRes = await appPool.query<{
+        id: string;
+        created_at: Date;
+        family_created_at: Date;
+        rotated_at: Date | null;
+        revoked_reason: string | null;
+        last_ip: string | null;
+      }>(`
+        SELECT id, created_at, family_created_at, rotated_at, revoked_reason, last_ip
+        FROM sessions
+        WHERE id = '${testSessionId}';
+      `);
+
+      expect(sessionRowRes.rowCount).toBe(1);
+      const sessionRow = sessionRowRes.rows[0];
+      expect(new Date(sessionRow.family_created_at).getTime()).toBe(specificCreatedAt.getTime());
+      expect(sessionRow.rotated_at).toBeNull();
+      expect(sessionRow.revoked_reason).toBeNull();
+      expect(sessionRow.last_ip).toBeNull();
+
+      // 5. Run second upgrade: must be an idempotent no-op with 0 pending
+      const secondUpgrade = await migrationRunner.upgrade(legacyDb);
+      expect(secondUpgrade.success).toBe(true);
+
+      const statusAfterSecond = await migrationRunner.status(legacyDb);
+      expect(statusAfterSecond.pending).toEqual([]);
+      expect(statusAfterSecond.applied).toEqual(statusAfterUpgrade.applied);
+
+      await appPool.end();
+    } finally {
+      await superuserPool
+        .query(`DROP DATABASE IF EXISTS ${legacyDb} WITH (FORCE);`)
+        .catch(() => {});
+      if (fs.existsSync(legacySuiteDir)) {
+        fs.rmSync(legacySuiteDir, { recursive: true, force: true });
+      }
+    }
+  });
 });
