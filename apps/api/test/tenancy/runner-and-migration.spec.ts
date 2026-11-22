@@ -161,19 +161,25 @@ describe('TenantRunner & MigrationRunner Invariants (Tests 10, 11)', () => {
   });
 
   it('11. MigrationRunner: status tracking, upgrade with mock migration, durable failure state, and Redis rehydration', async () => {
-    // 1. Prepare mock schema and migrations directory with 0001_init and 0002_add_test_table
-    fs.mkdirSync(path.join(mockMigrationsDir, '0001_init'), { recursive: true });
-    fs.mkdirSync(path.join(mockMigrationsDir, '0002_add_test_table'), { recursive: true });
+    // 1. Prepare mock schema and migrations directory dynamically from all real migrations
+    const realMigrationsDir = path.resolve(__dirname, '../../prisma/migrations');
+    const realMigrations = fs
+      .readdirSync(realMigrationsDir)
+      .filter((f) => fs.statSync(path.join(realMigrationsDir, f)).isDirectory())
+      .sort();
 
-    // Copy original 0001_init migration SQL
-    fs.copyFileSync(
-      path.resolve(__dirname, '../../prisma/migrations/0001_init/migration.sql'),
-      path.join(mockMigrationsDir, '0001_init/migration.sql'),
-    );
+    for (const dir of realMigrations) {
+      fs.mkdirSync(path.join(mockMigrationsDir, dir), { recursive: true });
+      fs.copyFileSync(
+        path.join(realMigrationsDir, dir, 'migration.sql'),
+        path.join(mockMigrationsDir, dir, 'migration.sql'),
+      );
+    }
 
-    // Valid 0002 SQL migration: creates a new table
+    const mockTestMigrationName = '9999_add_test_table';
+    fs.mkdirSync(path.join(mockMigrationsDir, mockTestMigrationName), { recursive: true });
     fs.writeFileSync(
-      path.join(mockMigrationsDir, '0002_add_test_table/migration.sql'),
+      path.join(mockMigrationsDir, `${mockTestMigrationName}/migration.sql`),
       `CREATE TABLE test_migration_table (
         id UUID PRIMARY KEY,
         name TEXT NOT NULL
@@ -197,9 +203,9 @@ describe('TenantRunner & MigrationRunner Invariants (Tests 10, 11)', () => {
     // Check status before upgrade across all 3 databases
     for (const db of [db1, db2, db3]) {
       const statusBefore = await migrationRunner.status(db, mockMigrationsDir);
-      // Assertion: 1 applied, 1 pending
-      expect(statusBefore.applied).toEqual(['0001_init']);
-      expect(statusBefore.pending).toEqual(['0002_add_test_table']);
+      // Dynamically matches all real migrations applied, and only the mock migration pending
+      expect(statusBefore.applied).toEqual(realMigrations);
+      expect(statusBefore.pending).toEqual([mockTestMigrationName]);
     }
 
     // 2. Pre-create table `test_migration_table` ONLY in db3 to induce a genuine SQL collision failure
@@ -234,14 +240,15 @@ describe('TenantRunner & MigrationRunner Invariants (Tests 10, 11)', () => {
     const statusDb2After = await migrationRunner.status(db2, mockMigrationsDir);
     const statusDb3After = await migrationRunner.status(db3, mockMigrationsDir);
 
-    expect(statusDb1After.applied).toEqual(['0001_init', '0002_add_test_table']);
+    const expectedAllApplied = [...realMigrations, mockTestMigrationName];
+    expect(statusDb1After.applied).toEqual(expectedAllApplied);
     expect(statusDb1After.pending).toEqual([]);
 
-    expect(statusDb2After.applied).toEqual(['0001_init', '0002_add_test_table']);
+    expect(statusDb2After.applied).toEqual(expectedAllApplied);
     expect(statusDb2After.pending).toEqual([]);
 
-    expect(statusDb3After.applied).toEqual(['0001_init']);
-    expect(statusDb3After.pending).toEqual(['0002_add_test_table']);
+    expect(statusDb3After.applied).toEqual(realMigrations);
+    expect(statusDb3After.pending).toEqual([mockTestMigrationName]);
 
     // 6. Assert maintenance states: A and B are healthy, C is in durable maintenance
     const maintDb1 = await maintenanceService.get(db1);
