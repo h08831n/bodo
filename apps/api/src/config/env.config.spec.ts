@@ -23,7 +23,7 @@ describe('Environment Configuration Validation', () => {
     DB_LIST_PUBLIC: 'false',
     AUTO_MIGRATE: 'false',
     PG_BIN_PATH: '',
-    JWT_SECRET: 'super_secret_jwt_key_min_16_chars',
+    JWT_SECRET: 'super_secret_jwt_key_min_32_chars_ok!',
     ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
   };
 
@@ -44,6 +44,9 @@ describe('Environment Configuration Validation', () => {
     expect(config.MAX_RESTORE_ENTRIES).toBe(100000);
     expect(config.PG_TOOLS_DRIVER).toBe('local');
     expect(config.DRAIN_TIMEOUT_MS).toBe(15000);
+    expect(config.ACCESS_TOKEN_TTL_SEC).toBe(900);
+    expect(config.REFRESH_REUSE_GRACE_MS).toBe(10000);
+    expect(config.COOKIE_SECURE).toBe(false);
   });
 
   it('fails with a readable error when DATABASE_URL is missing', () => {
@@ -59,9 +62,27 @@ describe('Environment Configuration Validation', () => {
     expect(() => validateEnv(invalid)).toThrow(/MASTER_PASSWORD_INITIAL must be at least 8 chars/);
   });
 
-  it('fails when JWT_SECRET is shorter than 16 characters', () => {
-    const invalid = { ...validEnv, JWT_SECRET: 'too-short' };
-    expect(() => validateEnv(invalid)).toThrow(/JWT_SECRET must be at least 16 chars/);
+  it('fails when JWT_SECRET is shorter than 32 characters', () => {
+    const invalid = { ...validEnv, JWT_SECRET: 'too-short-jwt-secret' };
+    expect(() => validateEnv(invalid)).toThrow(/JWT_SECRET must be at least 32 chars/);
+  });
+
+  it('fails when JWT_SECRET uses default example in production mode', () => {
+    const invalid = {
+      ...validEnv,
+      NODE_ENV: 'production',
+      JWT_SECRET: 'super_secret_jwt_key_bodo_2026_min_16_chars',
+    };
+    expect(() => validateEnv(invalid)).toThrow(
+      /Default example JWT_SECRET is strictly forbidden in production mode/,
+    );
+  });
+
+  it('fails when JWT_SECRET_PREVIOUS is provided but shorter than 32 characters', () => {
+    const invalid = { ...validEnv, JWT_SECRET_PREVIOUS: 'short-previous-key' };
+    expect(() => validateEnv(invalid)).toThrow(
+      /JWT_SECRET_PREVIOUS must be at least 32 chars if provided/,
+    );
   });
 
   it('fails when ENCRYPTION_KEY is shorter than 32 characters', () => {

@@ -1,12 +1,14 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { DevOnlyGuard } from '../common/guards/dev-only.guard';
 import { TenantPrismaService } from '../infra/tenancy/tenant-prisma.service';
+import { Public } from '../common/decorators/auth.decorators';
 
 export interface TenantInfoResponse {
   database: string;
   companyName: string | null;
 }
 
+@Public()
 @Controller('v1/dev')
 @UseGuards(DevOnlyGuard)
 export class DevController {

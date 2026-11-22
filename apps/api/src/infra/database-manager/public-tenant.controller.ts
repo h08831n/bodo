@@ -3,7 +3,9 @@ import type { Request } from 'express';
 import { getEnv } from '../../config/env.config';
 import { DatabaseManagerService } from './database-manager.service';
 import { DomainMap } from '../config-store/domain-map';
+import { Public } from '../../common/decorators/auth.decorators';
 
+@Public()
 @Controller('v1/public')
 export class PublicTenantController {
   constructor(

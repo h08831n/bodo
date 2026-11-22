@@ -18,91 +18,144 @@ for (const envPath of candidateEnvPaths) {
   }
 }
 
-export const EnvSchema = z.object({
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  PORT: z
-    .string()
-    .transform((val) => parseInt(val, 10))
-    .default('3000'),
-  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
-  REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
-  REDIS_PASSWORD: z.string().optional().default(''),
-  CORS_ORIGINS: z.string().default('http://localhost:5173,http://localhost:3000'),
-  OPENAPI_ENABLED: z
-    .string()
-    .optional()
-    .transform((val) => {
-      if (val !== undefined) return val === 'true';
-      return process.env.NODE_ENV !== 'production';
-    }),
-  MASTER_PASSWORD_INITIAL: z.string().min(8, 'MASTER_PASSWORD_INITIAL must be at least 8 chars'),
-  DB_MANAGER_ENABLED: z
-    .string()
-    .transform((val) => val === 'true')
-    .default('true'),
-  DB_MANAGER_ALLOWED_IPS: z.string().default(''),
-  DB_LIST_PUBLIC: z
-    .string()
-    .transform((val) => val === 'true')
-    .default('false'),
-  AUTO_MIGRATE: z
-    .string()
-    .transform((val) => val === 'true')
-    .default('false'),
-  PG_BIN_PATH: z.string().optional().default(''),
-  JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 chars'),
-  ENCRYPTION_KEY: z.string().min(32, 'ENCRYPTION_KEY must be at least 32 chars'),
-  POSTGRES_HOST: z.string().default('127.0.0.1'),
-  POSTGRES_PORT: z
-    .string()
-    .transform((val) => parseInt(val, 10))
-    .default('5433'),
-  POSTGRES_USER: z.string().default('postgres'),
-  POSTGRES_PASSWORD: z.string().default('postgres'),
-  POSTGRES_DB: z.string().default('postgres'),
-  ERP_APP_PASSWORD: z.string().default('app_secret_change_in_prod'),
-  ERP_MIGRATOR_PASSWORD: z.string().default('migrator_secret_change_in_prod'),
-  ERP_PROVISIONER_PASSWORD: z.string().default('provisioner_secret_change_in_prod'),
-  TENANT_MAX_CLIENTS: z
-    .string()
-    .transform((val) => parseInt(val, 10))
-    .default('20'),
-  TENANT_POOL_SIZE: z
-    .string()
-    .transform((val) => parseInt(val, 10))
-    .default('5'),
-  TENANT_IDLE_MS: z
-    .string()
-    .transform((val) => parseInt(val, 10))
-    .default('600000'),
-  CONFIG_DIR: z.string().default('./data/config'),
-  FILESTORE_DIR: z.string().default('./data/filestore'),
-  BACKUP_DIR: z.string().default('./data/backups'),
-  LOGS_DIR: z.string().default('./data/logs'),
-  MAX_RESTORE_UPLOAD_MB: z
-    .string()
-    .transform((val) => parseInt(val, 10))
-    .default('5120'),
-  MAX_RESTORE_UNCOMPRESSED_MB: z
-    .string()
-    .transform((val) => parseInt(val, 10))
-    .default('20480'),
-  MAX_RESTORE_ENTRIES: z
-    .string()
-    .transform((val) => parseInt(val, 10))
-    .default('100000'),
-  PG_TOOLS_DRIVER: z.enum(['local', 'docker']).default('local'),
-  PG_DOCKER_CONTAINER: z.string().default('bodo-postgres-dev'),
-  ADMIN_JWT_SECRET: z.string().optional(),
-  CLEAN_ORPHANS: z
-    .string()
-    .transform((val) => val === 'true')
-    .default('false'),
-  DRAIN_TIMEOUT_MS: z
-    .string()
-    .transform((val) => parseInt(val, 10))
-    .default('15000'),
-});
+export const EnvSchema = z
+  .object({
+    NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+    PORT: z
+      .string()
+      .transform((val) => parseInt(val, 10))
+      .default('3000'),
+    DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+    REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
+    REDIS_PASSWORD: z.string().optional().default(''),
+    CORS_ORIGINS: z.string().default('http://localhost:5173,http://localhost:3000'),
+    OPENAPI_ENABLED: z
+      .string()
+      .optional()
+      .transform((val) => {
+        if (val !== undefined) return val === 'true';
+        return process.env.NODE_ENV !== 'production';
+      }),
+    MASTER_PASSWORD_INITIAL: z.string().min(8, 'MASTER_PASSWORD_INITIAL must be at least 8 chars'),
+    DB_MANAGER_ENABLED: z
+      .string()
+      .transform((val) => val === 'true')
+      .default('true'),
+    DB_MANAGER_ALLOWED_IPS: z.string().default(''),
+    DB_LIST_PUBLIC: z
+      .string()
+      .transform((val) => val === 'true')
+      .default('false'),
+    AUTO_MIGRATE: z
+      .string()
+      .transform((val) => val === 'true')
+      .default('false'),
+    PG_BIN_PATH: z.string().optional().default(''),
+    JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 chars'),
+    JWT_SECRET_PREVIOUS: z
+      .string()
+      .optional()
+      .refine((val) => !val || val.length >= 32, {
+        message: 'JWT_SECRET_PREVIOUS must be at least 32 chars if provided',
+      }),
+    COOKIE_SECURE: z
+      .string()
+      .optional()
+      .transform((val) => {
+        if (val !== undefined) return val === 'true';
+        return process.env.NODE_ENV === 'production';
+      }),
+    REFRESH_TOKEN_PEPPER: z
+      .string()
+      .min(32, 'REFRESH_TOKEN_PEPPER must be at least 32 chars')
+      .default('super_secret_refresh_pepper_bodo_2026_32chars'),
+    REFRESH_REUSE_GRACE_MS: z
+      .string()
+      .transform((val) => parseInt(val, 10))
+      .default('10000'),
+    ACCESS_TOKEN_TTL_SEC: z
+      .string()
+      .transform((val) => parseInt(val, 10))
+      .default('900'),
+    ARGON2_MEMORY_COST: z
+      .string()
+      .transform((val) => parseInt(val, 10))
+      .default('19456'),
+    ARGON2_TIME_COST: z
+      .string()
+      .transform((val) => parseInt(val, 10))
+      .default('2'),
+    ARGON2_PARALLELISM: z
+      .string()
+      .transform((val) => parseInt(val, 10))
+      .default('1'),
+    ENCRYPTION_KEY: z.string().min(32, 'ENCRYPTION_KEY must be at least 32 chars'),
+    POSTGRES_HOST: z.string().default('127.0.0.1'),
+    POSTGRES_PORT: z
+      .string()
+      .transform((val) => parseInt(val, 10))
+      .default('5433'),
+    POSTGRES_USER: z.string().default('postgres'),
+    POSTGRES_PASSWORD: z.string().default('postgres'),
+    POSTGRES_DB: z.string().default('postgres'),
+    ERP_APP_PASSWORD: z.string().default('app_secret_change_in_prod'),
+    ERP_MIGRATOR_PASSWORD: z.string().default('migrator_secret_change_in_prod'),
+    ERP_PROVISIONER_PASSWORD: z.string().default('provisioner_secret_change_in_prod'),
+    TENANT_MAX_CLIENTS: z
+      .string()
+      .transform((val) => parseInt(val, 10))
+      .default('20'),
+    TENANT_POOL_SIZE: z
+      .string()
+      .transform((val) => parseInt(val, 10))
+      .default('5'),
+    TENANT_IDLE_MS: z
+      .string()
+      .transform((val) => parseInt(val, 10))
+      .default('600000'),
+    CONFIG_DIR: z.string().default('./data/config'),
+    FILESTORE_DIR: z.string().default('./data/filestore'),
+    BACKUP_DIR: z.string().default('./data/backups'),
+    LOGS_DIR: z.string().default('./data/logs'),
+    MAX_RESTORE_UPLOAD_MB: z
+      .string()
+      .transform((val) => parseInt(val, 10))
+      .default('5120'),
+    MAX_RESTORE_UNCOMPRESSED_MB: z
+      .string()
+      .transform((val) => parseInt(val, 10))
+      .default('20480'),
+    MAX_RESTORE_ENTRIES: z
+      .string()
+      .transform((val) => parseInt(val, 10))
+      .default('100000'),
+    PG_TOOLS_DRIVER: z.enum(['local', 'docker']).default('local'),
+    PG_DOCKER_CONTAINER: z.string().default('bodo-postgres-dev'),
+    ADMIN_JWT_SECRET: z.string().optional(),
+    CLEAN_ORPHANS: z
+      .string()
+      .transform((val) => val === 'true')
+      .default('false'),
+    DRAIN_TIMEOUT_MS: z
+      .string()
+      .transform((val) => parseInt(val, 10))
+      .default('15000'),
+  })
+  .superRefine((data, ctx) => {
+    if (data.NODE_ENV === 'production') {
+      const forbiddenDefaults = [
+        'super_secret_jwt_key_bodo_2026_min_16_chars',
+        'super_secret_jwt_key_min_32_chars_example',
+      ];
+      if (forbiddenDefaults.includes(data.JWT_SECRET)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['JWT_SECRET'],
+          message: 'Default example JWT_SECRET is strictly forbidden in production mode',
+        });
+      }
+    }
+  });
 
 export type EnvConfig = z.infer<typeof EnvSchema>;
 

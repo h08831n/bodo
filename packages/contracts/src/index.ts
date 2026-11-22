@@ -25,6 +25,7 @@ export const ErrorCodeSchema = z.enum([
   'INCOMPATIBLE_MIGRATION',
   'ZIP_SLIP_ATTEMPT',
   'ZIP_BOMB_DETECTED',
+  'PASSWORD_CHANGE_REQUIRED',
 ]);
 
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
@@ -75,4 +76,5 @@ export const HealthStatusSchema = z.object({
 export type HealthStatus = z.infer<typeof HealthStatusSchema>;
 
 export * from './admin.js';
+export * from './auth.js';
 export * from './pagination.js';

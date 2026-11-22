@@ -1,5 +1,5 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
-import { APP_PIPE, APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_PIPE, APP_FILTER, APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { HealthModule } from './health/health.module';
 import { LoggerService } from './common/logger/logger.service';
@@ -16,6 +16,11 @@ import { DevModule } from './dev/dev.module';
 import { AdminModule } from './infra/admin/admin.module';
 import { DatabaseManagerModule } from './infra/database-manager/database-manager.module';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { UserTypeGuard } from './common/guards/user-type.guard';
+import { PasswordChangeGuard } from './common/guards/password-change.guard';
+import { PermissionGuard } from './common/guards/permission.guard';
 
 @Module({
   imports: [
@@ -23,6 +28,7 @@ import { RateLimitModule } from './common/rate-limit/rate-limit.module';
     ConfigStoreModule,
     TenancyModule,
     RateLimitModule,
+    AuthModule,
     HealthModule,
     DevModule,
     AdminModule,
@@ -41,6 +47,22 @@ import { RateLimitModule } from './common/rate-limit/rate-limit.module';
     {
       provide: APP_INTERCEPTOR,
       useClass: ResponseTransformInterceptor,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: UserTypeGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: PasswordChangeGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: PermissionGuard,
     },
   ],
   exports: [LoggerService],

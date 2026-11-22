@@ -48,7 +48,9 @@ export function expectNoSecrets(payload: unknown, path = 'root'): void {
       const currentPath = `${path}.${key}`;
 
       // Check if key itself is sensitive and has a non-redacted value
-      const isSensitiveKey = FORBIDDEN_KEY_PATTERNS.some((p) => p.test(key));
+      // Explicitly allow boolean flag mustChangePassword
+      const isAllowedKey = ['mustChangePassword', 'must_change_password'].includes(key);
+      const isSensitiveKey = !isAllowedKey && FORBIDDEN_KEY_PATTERNS.some((p) => p.test(key));
       if (isSensitiveKey) {
         if (value !== '[REDACTED]' && value !== undefined && value !== null) {
           throw new Error(

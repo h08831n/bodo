@@ -14,6 +14,7 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test && node scripts/check-no-external.mjs && node --test scripts/__tests__/check-drift.test.mjs",
     "test:integration": "pnpm --filter @bodo/api test:integration",
+    "smoke": "node scripts/smoke.mjs",
     "check:external": "node scripts/check-no-external.mjs",
     "db:init-roles": "node scripts/init-roles.mjs",
     "db:create-dev": "node scripts/create-dev-db.mjs",

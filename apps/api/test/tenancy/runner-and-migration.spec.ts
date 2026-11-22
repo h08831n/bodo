@@ -401,7 +401,7 @@ describe('TenantRunner & MigrationRunner Invariants (Tests 10, 11)', () => {
       `);
 
       expect(sessionRowRes.rowCount).toBe(1);
-      const sessionRow = sessionRowRes.rows[0];
+      const sessionRow = sessionRowRes.rows[0]!;
       expect(new Date(sessionRow.family_created_at).getTime()).toBe(specificCreatedAt.getTime());
       expect(sessionRow.rotated_at).toBeNull();
       expect(sessionRow.revoked_reason).toBeNull();
