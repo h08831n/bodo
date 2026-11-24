@@ -2,7 +2,12 @@ import { Injectable, NestMiddleware, Logger, NotFoundException } from '@nestjs/c
 import type { Request, Response, NextFunction } from 'express';
 import { DatabaseRegistryService } from './database-registry.service';
 import { TenantClientManager } from './tenant-client-manager';
-import { HostResolver, HeaderResolver, TenantResolver } from './tenant-resolver';
+import {
+  HostResolver,
+  HeaderResolver,
+  TokenClaimResolver,
+  TenantResolver,
+} from './tenant-resolver';
 import { DomainMap } from '../config-store/domain-map';
 import { DatabaseRequiredError } from './errors';
 import { runWithTenant } from './tenant-context';
@@ -29,7 +34,7 @@ export class TenantMiddleware implements NestMiddleware {
     private readonly clientManager: TenantClientManager,
     domainMap: DomainMap,
   ) {
-    this.resolvers = [new HostResolver(domainMap), new HeaderResolver()];
+    this.resolvers = [new HostResolver(domainMap), new HeaderResolver(), new TokenClaimResolver()];
   }
 
   async use(req: Request, res: Response, next: NextFunction): Promise<void> {

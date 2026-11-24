@@ -5,6 +5,7 @@ export interface TenantContextPayload {
   db: string;
   requestId?: string;
   userId?: string;
+  userType?: string;
   client?: PrismaClient;
   tx?: Prisma.TransactionClient;
   afterCommitHooks?: Array<() => Promise<void> | void>;
@@ -60,4 +61,15 @@ export function getTenantContext(): TenantContextPayload | null {
 export function getCurrentTenantClient(): PrismaClient | null {
   const store = tenantStorage.getStore();
   return store?.client ?? null;
+}
+
+/**
+ * Sets authenticated user context on current tenant scope.
+ */
+export function setContextUser(userId: string, userType: string): void {
+  const store = tenantStorage.getStore();
+  if (store) {
+    store.userId = userId;
+    store.userType = userType;
+  }
 }

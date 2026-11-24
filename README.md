@@ -213,3 +213,119 @@ pnpm db:manager audit --tail 50
 ├── docs/               # مستندات فنی، قوانین و سوابق تصمیمات معماری (ADRs)
 └── infra/              # پیکربندی Docker Compose، Nginx و اسکریپت‌های آغازین دیتابیس
 ```
+
+---
+
+## ۸. راهنمای تست و فراخوانی سرویس‌های احراز هویت (Auth API Guide - S1.6)
+
+سیستم احراز هویت bodo بر پایه معماری دو توکنی امن پیاده‌سازی شده است:
+
+- **Access Token:** کوتاه‌مدت (۱۵ دقیقه)، سبک، نگهداری در حافظه، ارسال در هدر `Authorization: Bearer <token>`.
+- **Refresh Token:** بلندمدت (۷ روز)، چرخش الزامی در هر فراخوانی، نگهداری در کوکی ایمن `HttpOnly` با نام ایزوله مستاجر (`bodo_rt_<slug>`).
+
+تمام اندپوینت‌های تجاری به‌طور پیش‌فرض محافظت‌شده هستند و برای دسترسی به دیتابیس هر شرکت نیاز به هدر `X-Database` دارند.
+
+### ۸.۱. اجرای تست دودویی کامل (Smoke Test)
+
+برای اجرای اعتبارسنجی انتهای‌به‌انتهای احراز هویت، چرخش توکن، رد استفاده مجدد و پاکسازی کامل دیتابیس تستی:
+
+```powershell
+# اجرای تست دودویی با pnpm
+pnpm smoke
+
+# یا اجرای لانچر دسته‌ای در ویندوز
+.\smoke.bat
+```
+
+---
+
+### ۸.۲. سناریوی کامل ورود، پروفایل، چرخش و خروج در PowerShell
+
+کدهای زیر را می‌توانید به‌طور مستقیم در کنسول PowerShell اجرا کنید (پیش‌فرض روی دیتابیس توسعه `erp_dev` و کاربر `admin`):
+
+```powershell
+# گام ۱: ورود به سیستم و دریافت توکن و کوکی
+$loginBody = @{
+    username = "admin"
+    password = "DevPassword2026!"
+} | ConvertTo-Json
+
+$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+$loginRes = Invoke-RestMethod -Uri "http://localhost:3000/v1/auth/login" `
+    -Method Post `
+    -Headers @{ "Content-Type" = "application/json"; "X-Database" = "erp_dev" } `
+    -Body $loginBody `
+    -WebSession $session
+
+$accessToken = $loginRes.accessToken
+Write-Host "ورود موفقیت‌آمیز بود! توکن دسترسی:" $accessToken
+
+# گام ۲: دریافت مشخصات کاربر و دسترسی‌ها (/me)
+$meRes = Invoke-RestMethod -Uri "http://localhost:3000/v1/auth/me" `
+    -Method Get `
+    -Headers @{
+        "Authorization" = "Bearer $accessToken"
+        "X-Database" = "erp_dev"
+    }
+
+Write-Host "کاربر وارد شده:" $meRes.user.fullName
+Write-Host "تعداد دسترسی‌ها:" $meRes.permissions.Count
+
+# گام ۳: چرخش رفرش‌توکن (/refresh)
+$refreshRes = Invoke-RestMethod -Uri "http://localhost:3000/v1/auth/refresh" `
+    -Method Post `
+    -Headers @{
+        "Content-Type" = "application/json"
+        "X-Database" = "erp_dev"
+        "Origin" = "http://localhost:3000"
+    } `
+    -Body "{}" `
+    -WebSession $session
+
+$newAccessToken = $refreshRes.accessToken
+Write-Host "توکن با موفقیت چرخید! توکن جدید:" $newAccessToken
+
+# گام ۴: خروج از سشن جاری (/logout)
+$logoutRes = Invoke-RestMethod -Uri "http://localhost:3000/v1/auth/logout" `
+    -Method Post `
+    -Headers @{
+        "Authorization" = "Bearer $newAccessToken"
+        "X-Database" = "erp_dev"
+        "Origin" = "http://localhost:3000"
+    } `
+    -WebSession $session
+
+Write-Host "خروج با موفقیت انجام شد:" ($logoutRes | ConvertTo-Json -Compress)
+```
+
+---
+
+### ۸.۳. سناریوی کامل با curl.exe (ویندوز و لینوکس)
+
+```bash
+# گام ۱: ورود و ذخیره کوکی در فایل cookies.txt
+curl.exe -i -c cookies.txt -X POST http://localhost:3000/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -H "X-Database: erp_dev" \
+  -d "{\"username\":\"admin\",\"password\":\"DevPassword2026!\"}"
+
+# خروجی شامل accessToken در بدنه و کوکی bodo_rt_dev در فایل cookies.txt است.
+
+# گام ۲: فراخوانی اندپوینت اطلاعات کاربر (/me)
+curl.exe -i http://localhost:3000/v1/auth/me \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "X-Database: erp_dev"
+
+# گام ۳: چرخش توکن با استفاده از کوکی ذخیره شده
+curl.exe -i -b cookies.txt -c cookies.txt -X POST http://localhost:3000/v1/auth/refresh \
+  -H "Content-Type: application/json" \
+  -H "X-Database: erp_dev" \
+  -H "Origin: http://localhost:3000" \
+  -d "{}"
+
+# گام ۴: خروج و ابطال نشست
+curl.exe -i -b cookies.txt -X POST http://localhost:3000/v1/auth/logout \
+  -H "Authorization: Bearer <NEW_ACCESS_TOKEN>" \
+  -H "X-Database: erp_dev" \
+  -H "Origin: http://localhost:3000"
+```

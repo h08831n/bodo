@@ -5,7 +5,9 @@ import { createTestApp } from '../test-app';
 import { expectNoSecrets } from '../../src/common/testing/expect-no-secrets';
 import { LoggerService } from '../../src/common/logger/logger.service';
 import { resetEnv } from '../../src/config/env.config';
+import { Public } from '../../src/common/decorators/auth.decorators';
 
+@Public()
 @Controller('v1/public/test-serializer')
 class TestSerializerController {
   @Get('types')

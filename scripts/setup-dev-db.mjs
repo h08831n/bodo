@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +8,28 @@ import { getDbConfig, formatDbError } from './db-env.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
+
+function ensureRequiredPackagesBuilt() {
+  const utilsDist = path.resolve(projectRoot, 'packages/utils/dist/index.cjs');
+  const contractsDist = path.resolve(projectRoot, 'packages/contracts/dist/index.cjs');
+  if (!fs.existsSync(utilsDist) || !fs.existsSync(contractsDist)) {
+    console.log(
+      `[db:setup-dev] Required package build outputs missing. Building @bodo/contracts and @bodo/utils...`,
+    );
+    const buildRes = spawnSync(
+      'pnpm',
+      ['turbo', 'run', 'build', '--filter=@bodo/contracts', '--filter=@bodo/utils'],
+      {
+        cwd: projectRoot,
+        stdio: 'inherit',
+        shell: process.platform === 'win32',
+      },
+    );
+    if (buildRes.status !== 0) {
+      throw new Error(`Failed to build @bodo/contracts and @bodo/utils for database setup.`);
+    }
+  }
+}
 
 async function runStep(stepName, scriptPath, envOverrides = {}) {
   console.log(`\n========================================================`);
@@ -29,6 +52,7 @@ async function runStep(stepName, scriptPath, envOverrides = {}) {
 }
 
 async function setupDevDb() {
+  ensureRequiredPackagesBuilt();
   const config = getDbConfig();
   console.log(`[db:setup-dev] Starting idempotent local database setup for "${config.targetDb}"...`);
 

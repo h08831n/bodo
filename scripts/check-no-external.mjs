@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { spawnSync } from 'node:child_process';
 
 /**
  * Script to verify that:
@@ -79,8 +80,16 @@ let totalViolations = 0;
 // --- STEP 1: Scan apps/web/dist ---
 console.log(`[check-no-external] (1/3) Scanning apps/web build output in ${WEB_DIST_DIR}...`);
 if (!fs.existsSync(WEB_DIST_DIR)) {
-  console.error(`[ERROR] apps/web/dist directory not found. Please run 'pnpm build' first.`);
-  process.exit(1);
+  console.log(`[check-no-external] apps/web/dist not found. Automatically building @bodo/web...`);
+  const buildResult = spawnSync('pnpm', ['--filter', '@bodo/web', 'build'], {
+    cwd: process.cwd(),
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+  });
+  if (buildResult.status !== 0 || !fs.existsSync(WEB_DIST_DIR)) {
+    console.error(`[ERROR] apps/web/dist directory not found and automatic build failed.`);
+    process.exit(1);
+  }
 }
 
 const distFiles = getAllFiles(WEB_DIST_DIR);

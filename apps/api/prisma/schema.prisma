@@ -129,17 +129,22 @@ model Session {
   userId           String    @map("user_id") @db.Uuid
   refreshTokenHash String    @unique @map("refresh_token_hash")
   familyId         String    @map("family_id") @db.Uuid
+  familyCreatedAt  DateTime  @default(now()) @map("family_created_at") @db.Timestamptz(3)
   userAgent        String?   @map("user_agent")
   ip               String?
+  lastIp           String?   @map("last_ip")
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   lastUsedAt       DateTime  @default(now()) @map("last_used_at") @db.Timestamptz(3)
   expiresAt        DateTime  @map("expires_at") @db.Timestamptz(3)
+  rotatedAt        DateTime? @map("rotated_at") @db.Timestamptz(3)
   revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(3)
+  revokedReason    String?   @map("revoked_reason")
 
   user User @relation(fields: [userId], references: [id])
 
   @@index([userId, revokedAt])
   @@index([familyId])
+  @@index([familyId, rotatedAt])
   @@map("sessions")
 }
 
